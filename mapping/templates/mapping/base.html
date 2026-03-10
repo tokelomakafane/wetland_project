@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} – Lesotho Wetland Monitoring</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: 250px; min-width: 250px; background: #0f2537; color: #c8d6e5;
+            display: flex; flex-direction: column; height: 100vh;
+            transition: width 0.3s;
+        }
+        .sidebar.collapsed { width: 60px; min-width: 60px; }
+        .sidebar.collapsed .sidebar-brand span,
+        .sidebar.collapsed .nav-label,
+        .sidebar.collapsed .user-info span { display: none; }
+        .sidebar.collapsed .nav-item { justify-content: center; }
+
+        .sidebar-brand {
+            padding: 18px 16px; display: flex; align-items: center; gap: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 700;
+            font-size: 15px; color: #fff;
+        }
+        .sidebar-brand .icon { font-size: 24px; }
+
+        .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+        .nav-section { padding: 8px 16px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: #5a7a9a; margin-top: 8px; }
+        .sidebar.collapsed .nav-section { display: none; }
+
+        .nav-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 16px; color: #8fa4b8; text-decoration: none;
+            font-size: 14px; transition: all 0.15s; cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: #e0e8f0; }
+        .nav-item.active { background: rgba(5,113,176,0.15); color: #4fc3f7; border-left-color: #4fc3f7; }
+        .nav-item .nav-icon { font-size: 18px; min-width: 24px; text-align: center; }
+        .nav-item .badge {
+            margin-left: auto; background: #e74c3c; color: white;
+            font-size: 10px; padding: 2px 7px; border-radius: 10px;
+        }
+
+        .sidebar-footer {
+            padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .user-avatar {
+            width: 34px; height: 34px; background: #0571b0; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; color: white; font-weight: 600;
+        }
+        .user-info span { display: block; }
+        .user-name { font-size: 13px; color: #e0e8f0; font-weight: 600; }
+        .user-role { font-size: 11px; color: #5a7a9a; }
+
+        /* ── Main content ── */
+        .main-wrapper { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .topbar {
+            height: 50px; background: #fff; border-bottom: 1px solid #e0e0e0;
+            display: flex; align-items: center; padding: 0 20px; gap: 15px;
+        }
+        .topbar .toggle-btn {
+            background: none; border: none; font-size: 20px; cursor: pointer; color: #555;
+        }
+        .topbar h2 { font-size: 16px; color: #333; font-weight: 600; }
+        .topbar .spacer { flex: 1; }
+        .topbar .logout-btn {
+            background: none; border: 1px solid #ddd; padding: 5px 14px;
+            border-radius: 5px; font-size: 12px; color: #666; cursor: pointer;
+            text-decoration: none;
+        }
+        .topbar .logout-btn:hover { background: #f5f5f5; }
+
+        .content { flex: 1; overflow: auto; background: #f0f2f5; }
+
+        /* ── Placeholder pages ── */
+        .placeholder-page {
+            padding: 40px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; min-height: 60vh;
+        }
+        .placeholder-page .placeholder-icon { font-size: 64px; margin-bottom: 16px; }
+        .placeholder-page h2 { font-size: 22px; color: #333; margin-bottom: 8px; }
+        .placeholder-page p { color: #888; font-size: 14px; max-width: 400px; text-align: center; }
+        .coming-soon {
+            display: inline-block; margin-top: 16px; padding: 6px 16px;
+            background: #fff3cd; color: #856404; border-radius: 20px;
+            font-size: 12px; font-weight: 600;
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <span class="icon">&#127758;</span>
+            <span>Wetland Monitor</span>
+        </div>
+
+        <div class="sidebar-nav">
+            <div class="nav-section">Main</div>
+            <a href="{% url 'mapping:dashboard' %}" class="nav-item {% if active_page == 'mapping' %}active{% endif %}">
+                <span class="nav-icon">&#128506;</span>
+                <span class="nav-label">Mapping</span>
+            </a>
+            <a href="{% url 'mapping:monitor' %}" class="nav-item {% if active_page == 'monitor' %}active{% endif %}">
+                <span class="nav-icon">&#128153;</span>
+                <span class="nav-label">Monitor Health</span>
+            </a>
+            <a href="{% url 'mapping:alerts' %}" class="nav-item {% if active_page == 'alerts' %}active{% endif %}">
+                <span class="nav-icon">&#128276;</span>
+                <span class="nav-label">Alerts</span>
+                <span class="badge">5</span>
+            </a>
+
+            <div class="nav-section">Data</div>
+            <a href="{% url 'mapping:community' %}" class="nav-item {% if active_page == 'community' %}active{% endif %}">
+                <span class="nav-icon">&#128101;</span>
+                <span class="nav-label">Community Inputs</span>
+            </a>
+            <a href="{% url 'mapping:drone_upload' %}" class="nav-item {% if active_page == 'drone_upload' %}active{% endif %}">
+                <span class="nav-icon">&#128752;</span>
+                <span class="nav-label">Upload Drone Image</span>
+            </a>
+
+            <div class="nav-section">Admin</div>
+            <a href="{% url 'mapping:users' %}" class="nav-item {% if active_page == 'users' %}active{% endif %}">
+                <span class="nav-icon">&#128100;</span>
+                <span class="nav-label">Users</span>
+            </a>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="user-avatar">MK</div>
+            <div class="user-info">
+                <span class="user-name">Makafane</span>
+                <span class="user-role">Administrator</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+        <div class="topbar">
+            <button class="toggle-btn" id="toggleSidebar">&#9776;</button>
+            <h2>{% block page_title %}Dashboard{% endblock %}</h2>
+            <div class="spacer"></div>
+            <a href="{% url 'mapping:login' %}" class="logout-btn">Logout</a>
+        </div>
+        <div class="content" id="mainContent">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('toggleSidebar').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

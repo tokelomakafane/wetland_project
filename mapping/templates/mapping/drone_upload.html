@@ -1,0 +1,553 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Upload Drone Image{% endblock %}
+{% block page_title %}Upload Drone Image{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    .upload-wrapper { display: flex; height: 100%; overflow: hidden; }
+
+    /* ── Left: Upload panel ── */
+    .upload-panel {
+        width: 420px; background: #fff; border-right: 1px solid #e0e0e0;
+        display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .panel-section {
+        padding: 20px; border-bottom: 1px solid #f0f0f0;
+    }
+    .panel-section h3 { font-size: 14px; color: #333; margin-bottom: 12px; }
+
+    /* Drop zone */
+    .drop-zone {
+        border: 2px dashed #ccc; border-radius: 12px; padding: 36px 20px;
+        text-align: center; cursor: pointer; transition: all 0.2s;
+        background: #fafbfc;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #1976d2; background: #e8f0fe; }
+    .drop-zone .drop-icon { font-size: 42px; margin-bottom: 8px; }
+    .drop-zone p { font-size: 13px; color: #666; margin: 4px 0; }
+    .drop-zone .browse-link { color: #1976d2; font-weight: 600; text-decoration: underline; cursor: pointer; }
+    .drop-zone small { font-size: 11px; color: #aaa; }
+
+    /* Image preview */
+    .preview-area { display: none; margin-top: 14px; }
+    .preview-area.show { display: block; }
+    .preview-img {
+        width: 100%; border-radius: 8px; max-height: 200px;
+        object-fit: cover; border: 1px solid #eee;
+    }
+    .preview-meta {
+        margin-top: 10px; background: #f8f9fa; border-radius: 8px;
+        padding: 12px; font-size: 12px;
+    }
+    .preview-meta .meta-row { display: flex; justify-content: space-between; padding: 3px 0; }
+    .preview-meta .meta-label { color: #888; }
+    .preview-meta .meta-value { color: #333; font-weight: 500; }
+    .geo-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+        margin-top: 8px;
+    }
+    .geo-yes { background: #e8f5e9; color: #2e7d32; }
+    .geo-no { background: #fff3e0; color: #e65100; }
+
+    /* Matched wetland card */
+    .match-card {
+        display: none; background: #f0f7ff; border: 1px solid #bbdefb;
+        border-radius: 10px; padding: 16px; margin-top: 14px;
+    }
+    .match-card.show { display: block; }
+    .match-card h4 { font-size: 13px; color: #1976d2; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .match-card .match-name { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .match-card .match-dist { font-size: 12px; color: #666; margin-bottom: 10px; }
+    .match-card .current-status { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-healthy { background: #2e7d32; }
+    .dot-critical { background: #e65100; }
+    .dot-severe { background: #c62828; }
+
+    /* Status update form */
+    .update-form { display: none; }
+    .update-form.show { display: block; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: #555; margin-bottom: 5px; font-weight: 600; }
+    .form-group select, .form-group textarea, .form-group input {
+        width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px;
+        font-size: 13px; font-family: inherit; outline: none;
+    }
+    .form-group select:focus, .form-group textarea:focus { border-color: #1976d2; }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+    .btn {
+        flex: 1; padding: 10px; border: none; border-radius: 8px;
+        font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-primary { background: #1976d2; color: #fff; }
+    .btn-primary:hover { background: #1565c0; }
+    .btn-secondary { background: #f0f0f0; color: #555; }
+    .btn-secondary:hover { background: #e0e0e0; }
+
+    /* Manual site select (for non-geotagged) */
+    .manual-select { display: none; margin-top: 14px; }
+    .manual-select.show { display: block; }
+    .manual-select label { font-size: 12px; color: #555; font-weight: 600; display: block; margin-bottom: 5px; }
+    .manual-select select {
+        width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+        border-radius: 6px; font-size: 13px; outline: none;
+    }
+
+    /* Success toast */
+    .toast {
+        display: none; position: fixed; bottom: 30px; right: 30px;
+        background: #2e7d32; color: #fff; padding: 14px 24px;
+        border-radius: 10px; font-size: 13px; font-weight: 600;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); z-index: 2000;
+        animation: slideUp 0.3s ease-out;
+    }
+    .toast.show { display: flex; align-items: center; gap: 8px; }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Upload history */
+    .history-list { list-style: none; padding: 0; margin: 0; }
+    .history-item {
+        display: flex; align-items: center; gap: 12px; padding: 10px 0;
+        border-bottom: 1px solid #f5f5f5; font-size: 12px;
+    }
+    .history-thumb {
+        width: 48px; height: 36px; border-radius: 6px;
+        object-fit: cover; background: #eee; flex-shrink: 0;
+    }
+    .history-info { flex: 1; }
+    .history-name { font-weight: 600; color: #333; font-size: 12px; }
+    .history-detail { color: #999; font-size: 11px; margin-top: 2px; }
+    .history-status-tag {
+        font-size: 10px; font-weight: 700; padding: 2px 8px;
+        border-radius: 10px; white-space: nowrap;
+    }
+
+    /* ── Right: Map ── */
+    .upload-map { flex: 1; position: relative; }
+    #droneMap { height: 100%; width: 100%; }
+
+    .map-info-box {
+        position: absolute; top: 12px; left: 12px; z-index: 500;
+        background: rgba(255,255,255,0.95); padding: 12px 16px;
+        border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        font-size: 12px; color: #555; max-width: 280px;
+    }
+    .map-info-box h4 { font-size: 13px; color: #333; margin-bottom: 4px; }
+
+    .leaflet-popup-content-wrapper { border-radius: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="upload-wrapper">
+    <!-- Left Panel -->
+    <div class="upload-panel">
+        <div class="panel-section">
+            <h3>&#128752; Upload Drone Image</h3>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-icon">&#128247;</div>
+                <p>Drag &amp; drop your drone image here</p>
+                <p>or <span class="browse-link" id="browseBtn">browse files</span></p>
+                <small>Supports JPEG, PNG, TIFF &bull; Max 50 MB</small>
+                <input type="file" id="fileInput" accept="image/*,.tif,.tiff" style="display:none" />
+            </div>
+
+            <div class="preview-area" id="previewArea">
+                <img id="previewImg" class="preview-img" alt="Drone image preview" />
+                <div class="preview-meta" id="previewMeta"></div>
+            </div>
+
+            <!-- Non-geotagged: manual select -->
+            <div class="manual-select" id="manualSelect">
+                <label>&#9888;&#65039; No geotag found. Select wetland manually:</label>
+                <select id="manualSiteSelect">
+                    <option value="">-- Choose a wetland site --</option>
+                </select>
+            </div>
+
+            <!-- Auto-matched wetland -->
+            <div class="match-card" id="matchCard">
+                <h4>&#128205; Matched Wetland</h4>
+                <div class="match-name" id="matchName"></div>
+                <div class="match-dist" id="matchDist"></div>
+                <div class="current-status">
+                    <span>Current status:</span>
+                    <span class="status-dot" id="matchDot"></span>
+                    <span id="matchStatus" style="font-weight:600;font-size:13px;"></span>
+                </div>
+            </div>
+
+            <!-- Status update form -->
+            <div class="update-form" id="updateForm">
+                <div class="form-group">
+                    <label>Update Health Status</label>
+                    <select id="newStatus">
+                        <option value="healthy">&#9989; Healthy</option>
+                        <option value="critical">&#9888;&#65039; Critical</option>
+                        <option value="severe">&#128308; Severe</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Observed Threat (if any)</label>
+                    <select id="newThreat">
+                        <option value="">None</option>
+                        <option value="erosion">&#127964;&#65039; Soil Erosion</option>
+                        <option value="trampling">&#128004; Animal Trampling</option>
+                        <option value="species">&#127807; Invasive Species</option>
+                        <option value="temperature">&#127777;&#65039; High Temperature</option>
+                        <option value="shape">&#128208; Shape Change</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Field Notes</label>
+                    <textarea id="fieldNotes" placeholder="Describe what you observed in the drone image..."></textarea>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                    <button class="btn btn-primary" id="submitBtn">&#128640; Submit &amp; Update</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload history -->
+        <div class="panel-section">
+            <h3>&#128197; Recent Uploads</h3>
+            <ul class="history-list" id="historyList"></ul>
+        </div>
+    </div>
+
+    <!-- Right: Map -->
+    <div class="upload-map">
+        <div class="map-info-box">
+            <h4>&#127757; Drone Image Locator</h4>
+            <p>Geotagged images are automatically matched to the nearest monitored wetland within 10 km.</p>
+        </div>
+        <div id="droneMap"></div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">&#9989; Status updated successfully!</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    // ── Wetland sites (same as monitor page) ──
+    const wetlands = [
+        { id:1,  name:"Lets'eng-la-Letsie",    district:"Mohale's Hoek", lat:-30.3085, lng:28.1646, status:'healthy',  threat:null,         ndvi:0.72 },
+        { id:2,  name:'Khubelu Wetland',        district:'Mokhotlong',    lat:-29.2800, lng:29.0600, status:'critical', threat:'erosion',     ndvi:0.38 },
+        { id:3,  name:'Semonkong Marshlands',   district:'Maseru',        lat:-29.8603, lng:28.0648, status:'healthy',  threat:null,         ndvi:0.65 },
+        { id:4,  name:'Oxbow Wetland',          district:'Mokhotlong',    lat:-28.7636, lng:28.6282, status:'severe',   threat:'trampling',  ndvi:0.21 },
+        { id:5,  name:'Bokong Nature Reserve',  district:'Thaba-Tseka',   lat:-29.1500, lng:28.7900, status:'critical', threat:'temperature',ndvi:0.42 },
+        { id:6,  name:'Mantsonyane Wetland',    district:'Thaba-Tseka',   lat:-29.5354, lng:28.2350, status:'severe',   threat:'shape',      ndvi:0.18 },
+        { id:7,  name:"Ts'akholo Wetland",      district:'Mafeteng',      lat:-29.6687, lng:27.9622, status:'healthy',  threat:null,         ndvi:0.68 },
+        { id:8,  name:"Qacha's Nek Wetland",    district:"Qacha's Nek",   lat:-30.0613, lng:28.4723, status:'critical', threat:'species',    ndvi:0.35 },
+        { id:9,  name:'Leribe Lowland Marsh',   district:'Leribe',        lat:-28.8866, lng:27.9853, status:'severe',   threat:'erosion',    ndvi:0.15 },
+        { id:10, name:'SNP Alpine Wetland',     district:"Qacha's Nek",   lat:-29.8686, lng:29.0970, status:'healthy',  threat:null,         ndvi:0.71 }
+    ];
+
+    const statusColors = { healthy:'#2e7d32', critical:'#e65100', severe:'#c62828' };
+    const statusLabels = { healthy:'Healthy', critical:'Critical', severe:'Severe' };
+    const threatLabels = {
+        erosion: '🏜️ Soil Erosion', species: '🌿 Invasive Species',
+        temperature: '🌡️ High Temperature', shape: '📐 Shape Change',
+        trampling: '🐄 Animal Trampling'
+    };
+
+    // ── Simulated geotagged image database ──
+    // Each "sample image" has a fake GPS coord near a wetland
+    const sampleGeoTags = [
+        { lat: -29.2815, lng: 29.0585 },  // near Khubelu
+        { lat: -29.8620, lng: 28.0660 },  // near Semonkong
+        { lat: -28.7650, lng: 28.6270 },  // near Oxbow
+        { lat: -30.3100, lng: 28.1660 },  // near Lets'eng
+        { lat: -29.5370, lng: 28.2340 },  // near Mantsonyane
+        { lat: -29.8700, lng: 29.0950 },  // near SNP
+        { lat: -30.0600, lng: 28.4740 },  // near Qacha's Nek
+    ];
+
+    // Simulated past uploads
+    const pastUploads = [
+        { name: 'DJI_0142.JPG', site: 'Oxbow Wetland', date: 'Mar 8, 2026', status: 'severe', statusLabel: 'Severe' },
+        { name: 'DJI_0098.JPG', site: 'Khubelu Wetland', date: 'Mar 5, 2026', status: 'critical', statusLabel: 'Critical' },
+        { name: 'DJI_0067.JPG', site: "Ts'akholo Wetland", date: 'Feb 28, 2026', status: 'healthy', statusLabel: 'Healthy' },
+    ];
+
+    // ── Initialize map ──
+    const map = L.map('droneMap', { center: [-29.6, 28.3], zoom: 8 });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+    }).addTo(map);
+
+    // Wetland markers on map
+    const wetlandMarkers = {};
+    wetlands.forEach(w => {
+        const m = L.circleMarker([w.lat, w.lng], {
+            radius: 10, fillColor: statusColors[w.status], color: '#fff',
+            weight: 2, fillOpacity: 0.8
+        }).addTo(map);
+        m.bindPopup(`<b>${w.name}</b><br>${w.district}<br>Status: ${statusLabels[w.status]}`);
+        wetlandMarkers[w.id] = m;
+    });
+
+    let uploadMarker = null;
+    let matchLine = null;
+    let selectedWetland = null;
+
+    // ── Haversine distance ──
+    function haversine(lat1, lng1, lat2, lng2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // ── Find nearest wetland ──
+    function findNearest(lat, lng) {
+        let best = null, bestDist = Infinity;
+        wetlands.forEach(w => {
+            const d = haversine(lat, lng, w.lat, w.lng);
+            if (d < bestDist) { bestDist = d; best = w; }
+        });
+        return { wetland: best, distance: bestDist };
+    }
+
+    // ── Show match on map ──
+    function showMatchOnMap(imgLat, imgLng, wetland) {
+        // Clear previous
+        if (uploadMarker) map.removeLayer(uploadMarker);
+        if (matchLine) map.removeLayer(matchLine);
+
+        // Drone image location marker
+        uploadMarker = L.marker([imgLat, imgLng], {
+            icon: L.divIcon({
+                className: '',
+                html: '<div style="background:#1976d2;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid #fff;">📷</div>',
+                iconSize: [32, 32], iconAnchor: [16, 16]
+            })
+        }).addTo(map);
+        uploadMarker.bindPopup(`<b>Drone Image Location</b><br>Lat: ${imgLat.toFixed(5)}<br>Lng: ${imgLng.toFixed(5)}`).openPopup();
+
+        // Line connecting to matched wetland
+        matchLine = L.polyline([[imgLat, imgLng], [wetland.lat, wetland.lng]], {
+            color: '#1976d2', weight: 2, dashArray: '6 4', opacity: 0.7
+        }).addTo(map);
+
+        // Highlight matched wetland
+        wetlandMarkers[wetland.id].setStyle({ radius: 14, weight: 3, color: '#1976d2' });
+
+        // Zoom to fit both points
+        const bounds = L.latLngBounds([[imgLat, imgLng], [wetland.lat, wetland.lng]]);
+        map.fitBounds(bounds, { padding: [60, 60] });
+    }
+
+    // ── Show wetland match card ──
+    function showMatchCard(wetland, distKm) {
+        selectedWetland = wetland;
+        const card = document.getElementById('matchCard');
+        document.getElementById('matchName').textContent = wetland.name;
+        document.getElementById('matchDist').textContent = `${wetland.district} District • ${distKm.toFixed(1)} km from image`;
+        document.getElementById('matchDot').className = 'status-dot dot-' + wetland.status;
+        document.getElementById('matchStatus').textContent = statusLabels[wetland.status];
+        document.getElementById('matchStatus').style.color = statusColors[wetland.status];
+        card.classList.add('show');
+
+        // Show update form
+        document.getElementById('newStatus').value = wetland.status;
+        document.getElementById('newThreat').value = wetland.threat || '';
+        document.getElementById('updateForm').classList.add('show');
+    }
+
+    // ── Handle file selection ──
+    function handleFile(file) {
+        if (!file || !file.type.startsWith('image/') && !file.name.match(/\.tiff?$/i)) return;
+
+        // Show preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('previewArea').classList.add('show');
+        };
+        reader.readAsDataURL(file);
+
+        // Simulate geotag detection (70% chance geotagged)
+        const hasGeoTag = Math.random() < 0.7;
+
+        const metaEl = document.getElementById('previewMeta');
+        const sizeKB = (file.size / 1024).toFixed(0);
+        const sizeMB = (file.size / 1048576).toFixed(1);
+        const displaySize = file.size > 1048576 ? sizeMB + ' MB' : sizeKB + ' KB';
+
+        if (hasGeoTag) {
+            // Pick a random simulated geotag
+            const geo = sampleGeoTags[Math.floor(Math.random() * sampleGeoTags.length)];
+            // Add slight randomness
+            const imgLat = geo.lat + (Math.random() - 0.5) * 0.01;
+            const imgLng = geo.lng + (Math.random() - 0.5) * 0.01;
+
+            const { wetland, distance } = findNearest(imgLat, imgLng);
+
+            metaEl.innerHTML = `
+                <div class="meta-row"><span class="meta-label">Filename</span><span class="meta-value">${file.name}</span></div>
+                <div class="meta-row"><span class="meta-label">Size</span><span class="meta-value">${displaySize}</span></div>
+                <div class="meta-row"><span class="meta-label">Latitude</span><span class="meta-value">${imgLat.toFixed(5)}°</span></div>
+                <div class="meta-row"><span class="meta-label">Longitude</span><span class="meta-value">${imgLng.toFixed(5)}°</span></div>
+                <div class="geo-badge geo-yes">📍 Geotagged — Auto-matched to nearest wetland</div>
+            `;
+
+            document.getElementById('manualSelect').classList.remove('show');
+
+            if (distance <= 10) {
+                showMatchOnMap(imgLat, imgLng, wetland);
+                showMatchCard(wetland, distance);
+            } else {
+                metaEl.innerHTML += '<div class="geo-badge geo-no">⚠️ No monitored wetland within 10 km</div>';
+                document.getElementById('manualSelect').classList.add('show');
+            }
+        } else {
+            metaEl.innerHTML = `
+                <div class="meta-row"><span class="meta-label">Filename</span><span class="meta-value">${file.name}</span></div>
+                <div class="meta-row"><span class="meta-label">Size</span><span class="meta-value">${displaySize}</span></div>
+                <div class="geo-badge geo-no">⚠️ No GPS data found in image</div>
+            `;
+            document.getElementById('matchCard').classList.remove('show');
+            document.getElementById('updateForm').classList.remove('show');
+            document.getElementById('manualSelect').classList.add('show');
+        }
+    }
+
+    // ── Drag & drop ──
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    document.getElementById('browseBtn').addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+    // ── Manual site selector ──
+    const manualSel = document.getElementById('manualSiteSelect');
+    wetlands.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w.id;
+        opt.textContent = `${w.name} (${w.district})`;
+        manualSel.appendChild(opt);
+    });
+    manualSel.addEventListener('change', function() {
+        if (!this.value) return;
+        const w = wetlands.find(x => x.id === parseInt(this.value));
+        if (w) {
+            // Show on map without drone pin
+            if (uploadMarker) map.removeLayer(uploadMarker);
+            if (matchLine) map.removeLayer(matchLine);
+            wetlandMarkers[w.id].setStyle({ radius: 14, weight: 3, color: '#1976d2' });
+            map.setView([w.lat, w.lng], 11);
+            wetlandMarkers[w.id].openPopup();
+            showMatchCard(w, 0);
+        }
+    });
+
+    // ── Submit update ──
+    document.getElementById('submitBtn').addEventListener('click', () => {
+        if (!selectedWetland) return;
+
+        const newStatus = document.getElementById('newStatus').value;
+        const newThreat = document.getElementById('newThreat').value;
+        const notes = document.getElementById('fieldNotes').value;
+
+        // Update the wetland in our local data
+        selectedWetland.status = newStatus;
+        selectedWetland.threat = newThreat || null;
+
+        // Update map marker color
+        wetlandMarkers[selectedWetland.id].setStyle({
+            fillColor: statusColors[newStatus], radius: 10, weight: 2, color: '#fff'
+        });
+        wetlandMarkers[selectedWetland.id].setPopupContent(
+            `<b>${selectedWetland.name}</b><br>${selectedWetland.district}<br>Status: ${statusLabels[newStatus]}` +
+            (newThreat ? `<br>Threat: ${threatLabels[newThreat]}` : '') +
+            (notes ? `<br><i style="font-size:11px;color:#666;">${notes}</i>` : '')
+        );
+
+        // Update match card display
+        document.getElementById('matchDot').className = 'status-dot dot-' + newStatus;
+        document.getElementById('matchStatus').textContent = statusLabels[newStatus];
+        document.getElementById('matchStatus').style.color = statusColors[newStatus];
+
+        // Add to upload history
+        const previewSrc = document.getElementById('previewImg').src;
+        const histItem = {
+            name: fileInput.files[0]?.name || 'drone_image.jpg',
+            site: selectedWetland.name,
+            date: 'Just now',
+            status: newStatus,
+            statusLabel: statusLabels[newStatus],
+            thumb: previewSrc
+        };
+        pastUploads.unshift(histItem);
+        renderHistory();
+
+        // Show toast
+        const toast = document.getElementById('toast');
+        toast.textContent = `✅ ${selectedWetland.name} status updated to ${statusLabels[newStatus]}`;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3500);
+
+        // Reset form
+        document.getElementById('fieldNotes').value = '';
+    });
+
+    document.getElementById('cancelBtn').addEventListener('click', () => {
+        document.getElementById('updateForm').classList.remove('show');
+        document.getElementById('matchCard').classList.remove('show');
+        document.getElementById('previewArea').classList.remove('show');
+        document.getElementById('manualSelect').classList.remove('show');
+        if (uploadMarker) map.removeLayer(uploadMarker);
+        if (matchLine) map.removeLayer(matchLine);
+        // Reset marker styles
+        wetlands.forEach(w => {
+            wetlandMarkers[w.id].setStyle({ radius: 10, weight: 2, color: '#fff', fillColor: statusColors[w.status] });
+        });
+        selectedWetland = null;
+    });
+
+    // ── Render upload history ──
+    function renderHistory() {
+        const listEl = document.getElementById('historyList');
+        listEl.innerHTML = '';
+        pastUploads.forEach(u => {
+            const tagCls = u.status === 'healthy' ? 'background:#c8e6c9;color:#1b5e20;' :
+                           u.status === 'critical' ? 'background:#ffe0b2;color:#bf360c;' :
+                           'background:#ffcdd2;color:#b71c1c;';
+            const li = document.createElement('li');
+            li.className = 'history-item';
+            li.innerHTML = `
+                <div class="history-thumb" style="${u.thumb ? 'background-image:url('+u.thumb+');background-size:cover;' : ''}"></div>
+                <div class="history-info">
+                    <div class="history-name">${u.name}</div>
+                    <div class="history-detail">${u.site} &bull; ${u.date}</div>
+                </div>
+                <span class="history-status-tag" style="${tagCls}">${u.statusLabel}</span>
+            `;
+            listEl.appendChild(li);
+        });
+    }
+    renderHistory();
+
+    setTimeout(() => map.invalidateSize(), 200);
+})();
+</script>
+{% endblock %}

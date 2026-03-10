@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login – Lesotho Wetland Monitoring</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a1628 0%, #1a3a5c 50%, #0d4f4f 100%);
+            height: 100vh; display: flex; align-items: center; justify-content: center;
+        }
+        .login-container {
+            background: rgba(255,255,255,0.95); border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3); padding: 40px;
+            width: 400px; max-width: 90vw;
+        }
+        .login-header { text-align: center; margin-bottom: 30px; }
+        .login-header .icon {
+            width: 60px; height: 60px; background: #0571b0; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 15px; font-size: 28px; color: white;
+        }
+        .login-header h1 { font-size: 20px; color: #1a3a5c; margin-bottom: 4px; }
+        .login-header p { font-size: 13px; color: #888; }
+        .form-group { margin-bottom: 18px; }
+        .form-group label {
+            display: block; font-size: 13px; font-weight: 600;
+            color: #555; margin-bottom: 6px;
+        }
+        .form-group input {
+            width: 100%; padding: 10px 14px; border: 1px solid #ddd;
+            border-radius: 6px; font-size: 14px; transition: border 0.2s;
+        }
+        .form-group input:focus { outline: none; border-color: #0571b0; }
+        .remember-row {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 20px; font-size: 13px;
+        }
+        .remember-row label { display: flex; align-items: center; gap: 6px; color: #666; cursor: pointer; }
+        .remember-row a { color: #0571b0; text-decoration: none; }
+        .btn-login {
+            width: 100%; padding: 12px; background: #0571b0; color: white;
+            border: none; border-radius: 6px; font-size: 15px; font-weight: 600;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .btn-login:hover { background: #045a8d; }
+        .footer-text {
+            text-align: center; margin-top: 20px; font-size: 12px; color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="icon">&#127758;</div>
+            <h1>Lesotho Wetland Monitoring</h1>
+            <p>Sign in to access the dashboard</p>
+        </div>
+        <form method="post" action="{% url 'mapping:login' %}">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter your password" required>
+            </div>
+            <div class="remember-row">
+                <label><input type="checkbox" name="remember"> Remember me</label>
+                <a href="#">Forgot password?</a>
+            </div>
+            <button type="submit" class="btn-login">Sign In</button>
+        </form>
+        <p class="footer-text">&copy; 2026 Lesotho Wetland Monitoring System</p>
+    </div>
+</body>
+</html>

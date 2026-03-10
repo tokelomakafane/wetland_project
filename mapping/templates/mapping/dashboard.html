@@ -1,0 +1,160 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Mapping{% endblock %}
+{% block page_title %}Wetland Mapping{% endblock %}
+
+{% block extra_head %}
+<style>
+    .content { padding: 0 !important; overflow: hidden !important; }
+    #map { height: 100%; width: 100%; }
+
+    .map-stats {
+        position: absolute; top: 60px; right: 10px; z-index: 1000;
+        background: rgba(255,255,255,0.95); padding: 15px;
+        border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        min-width: 220px;
+    }
+    .map-stats h3 { font-size: 14px; color: #1a5276; margin-bottom: 10px; }
+    .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .stat-value { font-weight: bold; color: #0571b0; }
+    .loading { color: #999; font-style: italic; }
+
+    .map-legend {
+        position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+        background: rgba(255,255,255,0.95); padding: 12px;
+        border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .map-legend h4 { font-size: 13px; margin-bottom: 8px; color: #333; }
+    .legend-item { display: flex; align-items: center; margin-bottom: 4px; font-size: 12px; }
+    .legend-color {
+        width: 16px; height: 16px; margin-right: 8px;
+        border-radius: 3px; border: 1px solid #ccc;
+    }
+
+    .map-layers {
+        position: absolute; top: 60px; left: 10px; z-index: 1000;
+        background: rgba(255,255,255,0.95); padding: 12px;
+        border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .map-layers h4 { font-size: 13px; margin-bottom: 8px; color: #333; }
+    .map-layers label {
+        display: flex; align-items: center; font-size: 12px;
+        margin-bottom: 4px; cursor: pointer;
+    }
+    .map-layers input { margin-right: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="map">
+    <div class="map-layers">
+        <h4>Layers</h4>
+        <label><input type="checkbox" id="lyr-wetlands" checked> Newly Identified Wetlands</label>
+        <label><input type="checkbox" id="lyr-classification"> Full Classification</label>
+        <label><input type="checkbox" id="lyr-ndvi"> NDVI</label>
+        <label><input type="checkbox" id="lyr-ndwi"> NDWI</label>
+        <label><input type="checkbox" id="lyr-samples" checked> Sample Sites</label>
+    </div>
+
+    <div class="map-stats">
+        <h3>Wetland Statistics</h3>
+        <div class="stat-row"><span>Sample Sites:</span><span class="stat-value" id="stat-sites">21</span></div>
+        <div class="stat-row"><span>Wetland Area:</span><span class="stat-value" id="stat-area"><span class="loading">loading...</span></span></div>
+        <div class="stat-row"><span>Lesotho Area:</span><span class="stat-value" id="stat-total"><span class="loading">loading...</span></span></div>
+    </div>
+
+    <div class="map-legend">
+        <h4>Legend</h4>
+        <div class="legend-item"><div class="legend-color" style="background:#00ffff"></div>Identified Wetlands</div>
+        <div class="legend-item"><div class="legend-color" style="background:#0571b0"></div>Wetland (full classification)</div>
+        <div class="legend-item"><div class="legend-color" style="background:#d9c99e"></div>Non-wetland</div>
+        <div class="legend-item"><div class="legend-color" style="background:#1a9641; border-radius:50%"></div>Sample Sites</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map', { zoomControl: true }).setView([-29.6, 28.2], 8);
+
+    var satellite = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { attribution: 'Esri', maxZoom: 18 }
+    ).addTo(map);
+
+    var osm = L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { attribution: '&copy; OpenStreetMap', maxZoom: 18 }
+    );
+
+    L.control.layers({'Satellite': satellite, 'OpenStreetMap': osm}, null, {position: 'bottomright'}).addTo(map);
+
+    var eeLayers = {};
+
+    fetch('/api/ee-tiles/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) { console.error('EE error:', data.error); return; }
+            eeLayers.classification = L.tileLayer(data.classification, {maxZoom: 18, opacity: 0.7});
+            eeLayers.wetlands = L.tileLayer(data.wetlands, {maxZoom: 18, opacity: 0.8}).addTo(map);
+            eeLayers.ndvi = L.tileLayer(data.ndvi, {maxZoom: 18, opacity: 0.7});
+            eeLayers.ndwi = L.tileLayer(data.ndwi, {maxZoom: 18, opacity: 0.7});
+            bindToggles();
+        })
+        .catch(function(err) { console.error('Failed to load EE tiles:', err); });
+
+    var sampleLayer;
+    fetch('/api/sample-sites/')
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+            sampleLayer = L.geoJSON(geojson, {
+                pointToLayer: function(feature, latlng) {
+                    return L.circleMarker(latlng, {
+                        radius: 7, fillColor: '#1a9641', color: '#fff',
+                        weight: 2, fillOpacity: 0.85
+                    });
+                },
+                onEachFeature: function(feature, layer) {
+                    var p = feature.properties;
+                    var elev = p.elevation !== null ? p.elevation + ' m' : 'N/A';
+                    layer.bindPopup(
+                        '<b>Sample #' + p.sample_number + '</b><br>' +
+                        p.village + '<br>Elevation: ' + elev
+                    );
+                }
+            }).addTo(map);
+        });
+
+    fetch('/api/wetland-stats/')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) { document.getElementById('stat-area').textContent = 'error'; return; }
+            var area = data.wetland_area_ha;
+            document.getElementById('stat-area').textContent =
+                (area ? area.toLocaleString(undefined, {maximumFractionDigits: 1}) : '—') + ' ha';
+            document.getElementById('stat-total').textContent =
+                data.total_area_ha.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' ha';
+            document.getElementById('stat-sites').textContent = data.sample_sites;
+        })
+        .catch(function() { document.getElementById('stat-area').textContent = 'unavailable'; });
+
+    function bindToggles() {
+        function toggle(id, layer) {
+            document.getElementById(id).addEventListener('change', function() {
+                if (!layer) return;
+                this.checked ? map.addLayer(layer) : map.removeLayer(layer);
+            });
+        }
+        toggle('lyr-wetlands', eeLayers.wetlands);
+        toggle('lyr-classification', eeLayers.classification);
+        toggle('lyr-ndvi', eeLayers.ndvi);
+        toggle('lyr-ndwi', eeLayers.ndwi);
+    }
+
+    document.getElementById('lyr-samples').addEventListener('change', function() {
+        if (!sampleLayer) return;
+        this.checked ? map.addLayer(sampleLayer) : map.removeLayer(sampleLayer);
+    });
+</script>
+{% endblock %}

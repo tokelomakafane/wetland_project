@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lesotho Wetland Mapping</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+
+        .header {
+            position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 10px 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .header h1 { font-size: 18px; color: #1a5276; }
+        .header .subtitle { font-size: 12px; color: #666; }
+
+        .stats-panel {
+            position: absolute; top: 60px; right: 10px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 15px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            min-width: 220px;
+        }
+        .stats-panel h3 { font-size: 14px; color: #1a5276; margin-bottom: 10px; }
+        .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+        .stat-value { font-weight: bold; color: #0571b0; }
+        .loading { color: #999; font-style: italic; }
+
+        .legend {
+            position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 12px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .legend h4 { font-size: 13px; margin-bottom: 8px; color: #333; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; font-size: 12px; }
+        .legend-color {
+            width: 16px; height: 16px; margin-right: 8px;
+            border-radius: 3px; border: 1px solid #ccc;
+        }
+
+        .layer-control {
+            position: absolute; top: 60px; left: 10px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 12px;
+            border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .layer-control h4 { font-size: 13px; margin-bottom: 8px; color: #333; }
+        .layer-control label {
+            display: flex; align-items: center; font-size: 12px;
+            margin-bottom: 4px; cursor: pointer;
+        }
+        .layer-control input { margin-right: 6px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Lesotho Wetland Classification Map</h1>
+            <span class="subtitle">Random Forest Classification &middot; Sentinel-2 (Aug&ndash;Oct 2015&ndash;2016) &middot; 10 m resolution</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="layer-control" id="layerControl">
+        <h4>Layers</h4>
+        <label><input type="checkbox" id="lyr-wetlands" checked> Newly Identified Wetlands</label>
+        <label><input type="checkbox" id="lyr-classification"> Full Classification</label>
+        <label><input type="checkbox" id="lyr-ndvi"> NDVI</label>
+        <label><input type="checkbox" id="lyr-ndwi"> NDWI</label>
+        <label><input type="checkbox" id="lyr-samples" checked> Sample Sites</label>
+    </div>
+
+    <div class="stats-panel" id="statsPanel">
+        <h3>Wetland Statistics</h3>
+        <div class="stat-row"><span>Sample Sites:</span><span class="stat-value" id="stat-sites">21</span></div>
+        <div class="stat-row"><span>Wetland Area:</span><span class="stat-value" id="stat-area"><span class="loading">loading...</span></span></div>
+        <div class="stat-row"><span>Lesotho Area:</span><span class="stat-value" id="stat-total"><span class="loading">loading...</span></span></div>
+    </div>
+
+    <div class="legend">
+        <h4>Legend</h4>
+        <div class="legend-item"><div class="legend-color" style="background:#00ffff"></div>Identified Wetlands</div>
+        <div class="legend-item"><div class="legend-color" style="background:#0571b0"></div>Wetland (full classification)</div>
+        <div class="legend-item"><div class="legend-color" style="background:#d9c99e"></div>Non-wetland</div>
+        <div class="legend-item"><div class="legend-color" style="background:#1a9641; border-radius:50%"></div>Sample Sites</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ── Initialize map centred on Lesotho ──
+        var map = L.map('map', { zoomControl: true }).setView([-29.6, 28.2], 8);
+
+        // Basemaps
+        var satellite = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Esri', maxZoom: 18 }
+        ).addTo(map);
+
+        var osm = L.tileLayer(
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            { attribution: '&copy; OpenStreetMap', maxZoom: 18 }
+        );
+
+        L.control.layers({'Satellite': satellite, 'OpenStreetMap': osm}, null, {position: 'bottomright'}).addTo(map);
+
+        // ── EE tile layers (loaded from API) ──
+        var eeLayers = {};
+
+        fetch('/api/ee-tiles/')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    console.error('EE error:', data.error);
+                    return;
+                }
+
+                eeLayers.classification = L.tileLayer(data.classification, {maxZoom: 18, opacity: 0.7});
+                eeLayers.wetlands = L.tileLayer(data.wetlands, {maxZoom: 18, opacity: 0.8}).addTo(map);
+                eeLayers.ndvi = L.tileLayer(data.ndvi, {maxZoom: 18, opacity: 0.7});
+                eeLayers.ndwi = L.tileLayer(data.ndwi, {maxZoom: 18, opacity: 0.7});
+            })
+            .catch(function(err) { console.error('Failed to load EE tiles:', err); });
+
+        // ── Sample sites (GeoJSON from API) ──
+        var sampleLayer;
+        fetch('/api/sample-sites/')
+            .then(function(r) { return r.json(); })
+            .then(function(geojson) {
+                sampleLayer = L.geoJSON(geojson, {
+                    pointToLayer: function(feature, latlng) {
+                        return L.circleMarker(latlng, {
+                            radius: 7, fillColor: '#1a9641', color: '#fff',
+                            weight: 2, fillOpacity: 0.85
+                        });
+                    },
+                    onEachFeature: function(feature, layer) {
+                        var p = feature.properties;
+                        var elev = p.elevation !== null ? p.elevation + ' m' : 'N/A';
+                        layer.bindPopup(
+                            '<b>Sample #' + p.sample_number + '</b><br>' +
+                            p.village + '<br>Elevation: ' + elev
+                        );
+                    }
+                }).addTo(map);
+            });
+
+        // ── Wetland stats ──
+        fetch('/api/wetland-stats/')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    document.getElementById('stat-area').textContent = 'error';
+                    return;
+                }
+                var area = data.wetland_area_ha;
+                document.getElementById('stat-area').textContent =
+                    (area ? area.toLocaleString(undefined, {maximumFractionDigits: 1}) : '—') + ' ha';
+                document.getElementById('stat-total').textContent =
+                    data.total_area_ha.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' ha';
+                document.getElementById('stat-sites').textContent = data.sample_sites;
+            })
+            .catch(function() {
+                document.getElementById('stat-area').textContent = 'unavailable';
+            });
+
+        // ── Layer toggle controls ──
+        function toggleLayer(id, layer) {
+            document.getElementById(id).addEventListener('change', function() {
+                if (!layer) return;
+                if (this.checked) { map.addLayer(layer); }
+                else { map.removeLayer(layer); }
+            });
+        }
+
+        // Wait for EE layers to load, then bind toggles
+        setTimeout(function() {
+            toggleLayer('lyr-wetlands', eeLayers.wetlands);
+            toggleLayer('lyr-classification', eeLayers.classification);
+            toggleLayer('lyr-ndvi', eeLayers.ndvi);
+            toggleLayer('lyr-ndwi', eeLayers.ndwi);
+        }, 3000);
+
+        document.getElementById('lyr-samples').addEventListener('change', function() {
+            if (!sampleLayer) return;
+            if (this.checked) { map.addLayer(sampleLayer); }
+            else { map.removeLayer(sampleLayer); }
+        });
+    </script>
+</body>
+</html>
