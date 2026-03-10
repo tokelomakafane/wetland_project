@@ -102,7 +102,7 @@ def ee_tile_url(request):
 
         s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
             .filter(ee.Filter.calendarRange(8, 10, 'month')) \
-            .filterDate('2015-01-01', '2016-12-31') \
+            .filterDate('2022-01-01', '2023-12-31') \
             .filterBounds(study_area) \
             .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10)) \
             .median() \

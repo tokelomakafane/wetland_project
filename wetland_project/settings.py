@@ -67,8 +67,9 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Earth Engine Configuration ──────────────────────────────────────
+EE_PROJECT = os.environ.get('EE_PROJECT', 'tokelo-329815')
 # Replace with your actual GEE asset ID after running the export task
-EE_ASSET_ID = 'users/YOUR_USERNAME/Lesotho_Wetland_Classification_2015_2016'
+EE_ASSET_ID = 'projects/tokelo-329815/assets/Lesotho_Wetland_Classification_2013_2023'
 # Path to your GEE service account key JSON (for production)
 # For development, ee.Authenticate() is used instead
 EE_SERVICE_ACCOUNT_KEY = os.environ.get('EE_SERVICE_ACCOUNT_KEY', '')

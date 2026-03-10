@@ -11,12 +11,13 @@ def initialize_ee():
     if _initialized:
         return
 
+    project = getattr(settings, 'EE_PROJECT', None)
     key_path = getattr(settings, 'EE_SERVICE_ACCOUNT_KEY', '')
     if key_path:
         credentials = ee.ServiceAccountCredentials('', key_file=key_path)
-        ee.Initialize(credentials)
+        ee.Initialize(credentials, project=project)
     else:
         # For development: uses cached credentials from `earthengine authenticate`
-        ee.Initialize()
+        ee.Initialize(project=project)
 
     _initialized = True
