@@ -212,8 +212,8 @@
 
     // ── map ──
     const map = L.map('lstMap', { center: [-29.6, 28.3], zoom: 8 });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap', maxZoom: 18
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google', maxZoom: 20
     }).addTo(map);
 
     // legend
