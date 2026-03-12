@@ -188,3 +188,179 @@ def sample_sites(request):
         'type': 'FeatureCollection',
         'features': features,
     })
+
+
+# ── LST Monitoring helpers ─────────────────────────────────────────
+
+def _calculate_lst(image):
+    """Apply LST calculation to a Landsat 8 TOA image (server-side EE)."""
+    thermal = image.select('B10')
+    ndvi = image.normalizedDifference(['B5', 'B4'])
+    emissivity = ndvi.expression('0.004 * V + 0.986', {'V': ndvi})
+    lst = thermal.expression(
+        'Tb / (1 + (0.00115 * Tb / 1.4388) * log(emissivity)) - 273.15',
+        {'Tb': thermal, 'emissivity': emissivity}
+    ).rename('LST')
+    return image.addBands(lst)
+
+
+def _get_sample_sites_fc():
+    """Build EE FeatureCollection of sample sites with 500 m buffers."""
+    import ee
+    features = []
+    for s in SAMPLE_SITES:
+        feat = ee.Feature(
+            ee.Geometry.Point([s['lng'], s['lat']]).buffer(500),
+            {
+                'sample_number': s['sample_number'],
+                'village': s['village'],
+                'elevation': s['elevation'] if s['elevation'] else 0,
+                'lat': s['lat'],
+                'lng': s['lng'],
+            }
+        )
+        features.append(feat)
+    return ee.FeatureCollection(features)
+
+
+def _classify_health(temp):
+    """Classify an LST value into a health category string."""
+    if temp is None:
+        return 'No Data'
+    if temp <= 18:
+        return 'Healthy'
+    if temp <= 22:
+        return 'Stressed'
+    if temp <= 26:
+        return 'Critical'
+    return 'Severe'
+
+
+# ── LST views ──────────────────────────────────────────────────────
+
+def lst_view(request):
+    """Render the LST monitoring page."""
+    return render(request, 'mapping/lst_monitor.html', {'active_page': 'lst'})
+
+
+def wetland_lst(request):
+    """Return per-site mean LST for a given year (Oct → Mar summer)."""
+    import ee
+    initialize_ee()
+
+    year = request.GET.get('year', '2023')
+    try:
+        year = int(year)
+        if year < 2013 or year > 2024:
+            return JsonResponse({'error': 'Year must be between 2013 and 2024'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    try:
+        sites = _get_sample_sites_fc()
+        start = ee.Date.fromYMD(year, 10, 1)
+        end = ee.Date.fromYMD(year + 1, 3, 31)
+
+        col = ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA') \
+            .filterDate(start, end) \
+            .filterBounds(sites.geometry())
+
+        mean_lst = col.map(_calculate_lst).select('LST').mean()
+
+        results = mean_lst.reduceRegions(
+            collection=sites,
+            reducer=ee.Reducer.mean(),
+            scale=30,
+        )
+
+        data = results.getInfo()
+
+        site_data = []
+        for feature in data['features']:
+            props = feature['properties']
+            temp = props.get('mean')
+            if temp is not None:
+                temp = round(temp, 2)
+            site_data.append({
+                'sample_number': props.get('sample_number'),
+                'village': props.get('village'),
+                'elevation': props.get('elevation'),
+                'lat': props.get('lat'),
+                'lng': props.get('lng'),
+                'temperature': temp,
+                'health': _classify_health(temp),
+            })
+
+        return JsonResponse({'year': year, 'sites': site_data})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def wetland_lst_predict(request):
+    """Return historical per-site LST (2013-2024) + linear predictions (2025-2030)."""
+    import ee
+    initialize_ee()
+
+    try:
+        sites = _get_sample_sites_fc()
+        years = list(range(2013, 2025))
+
+        # Stack annual mean LST bands + linear-fit trend in one image
+        stacked = None
+        annual_images = []
+        for yr in years:
+            start = ee.Date.fromYMD(yr, 10, 1)
+            end = ee.Date.fromYMD(yr + 1, 3, 31)
+            col = ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA') \
+                .filterDate(start, end) \
+                .filterBounds(sites.geometry())
+            mean_lst = col.map(_calculate_lst).select('LST').mean()
+            renamed = mean_lst.rename('LST_{}'.format(yr))
+            stacked = renamed if stacked is None else stacked.addBands(renamed)
+            time_band = ee.Image.constant(yr).float().rename('year')
+            annual_images.append(mean_lst.addBands(time_band).set('year', yr))
+
+        # Linear fit: LST = offset + scale * year
+        annual_col = ee.ImageCollection(annual_images)
+        trend = annual_col.select(['year', 'LST']).reduce(ee.Reducer.linearFit())
+        stacked = stacked.addBands(trend)
+
+        # Single server call for everything
+        results = stacked.reduceRegions(
+            collection=sites,
+            reducer=ee.Reducer.mean(),
+            scale=30,
+        )
+        data = results.getInfo()
+
+        response_data = []
+        for feature in data['features']:
+            props = feature['properties']
+            historical = {}
+            for yr in years:
+                val = props.get('LST_{}'.format(yr))
+                historical[str(yr)] = round(val, 2) if val is not None else None
+
+            slope = props.get('scale')
+            intercept = props.get('offset')
+            predictions = {}
+            if slope is not None and intercept is not None:
+                for yr in range(2025, 2031):
+                    predictions[str(yr)] = round(intercept + slope * yr, 2)
+                slope = round(slope, 4)
+
+            response_data.append({
+                'sample_number': props.get('sample_number'),
+                'village': props.get('village'),
+                'lat': props.get('lat'),
+                'lng': props.get('lng'),
+                'historical': historical,
+                'slope': slope,
+                'predictions': predictions,
+            })
+
+        return JsonResponse({'sites': response_data})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

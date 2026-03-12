@@ -8,6 +8,7 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('dashboard/', views.dashboard, name='dashboard'),
     path('monitor/', views.monitor_view, name='monitor'),
+    path('lst/', views.lst_view, name='lst'),
     path('alerts/', views.alerts_view, name='alerts'),
     path('community/', views.community_view, name='community'),
     path('drone-upload/', views.drone_upload_view, name='drone_upload'),
@@ -15,4 +16,6 @@ urlpatterns = [
     path('api/ee-tiles/', views.ee_tile_url, name='ee_tiles'),
     path('api/wetland-stats/', views.wetland_stats, name='wetland_stats'),
     path('api/sample-sites/', views.sample_sites, name='sample_sites'),
+    path('api/lst-data/', views.wetland_lst, name='lst_data'),
+    path('api/lst-predict/', views.wetland_lst_predict, name='lst_predict'),
 ]

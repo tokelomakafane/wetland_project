@@ -113,6 +113,10 @@
                 <span class="nav-icon">&#128153;</span>
                 <span class="nav-label">Monitor Health</span>
             </a>
+            <a href="{% url 'mapping:lst' %}" class="nav-item {% if active_page == 'lst' %}active{% endif %}">
+                <span class="nav-icon">&#127777;</span>
+                <span class="nav-label">LST Monitor</span>
+            </a>
             <a href="{% url 'mapping:alerts' %}" class="nav-item {% if active_page == 'alerts' %}active{% endif %}">
                 <span class="nav-icon">&#128276;</span>
                 <span class="nav-label">Alerts</span>
