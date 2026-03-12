@@ -439,8 +439,89 @@ def _calculate_bsi(image):
     return image.addBands(bsi)
 
 
+def _calculate_ndvi(image):
+    """Calculate NDVI for a Sentinel-2 image (server-side)."""
+    import ee
+    return image.addBands(image.normalizedDifference(['B8', 'B4']).rename('NDVI'))
+
+
+def _get_rusle_factors():
+    """Return static RUSLE factor images: K, LS, P."""
+    import ee
+    import math
+
+    dem = ee.Image('USGS/SRTMGL1_003')
+    slope_deg = ee.Terrain.slope(dem)
+    slope_pct = slope_deg.tan().multiply(100)
+
+    # LS-factor (Wischmeier & Smith 1978, cell-based)
+    m_exp = ee.Image(0.2) \
+        .where(slope_pct.gte(1).And(slope_pct.lt(3)), 0.2) \
+        .where(slope_pct.gte(3).And(slope_pct.lt(5)), 0.3) \
+        .where(slope_pct.gte(5), 0.5)
+    slope_length_factor = ee.Image(30).divide(22.13).pow(m_exp)
+    slope_steepness = ee.Image(0.065) \
+        .add(slope_pct.multiply(0.045)) \
+        .add(slope_pct.pow(2).multiply(0.0065))
+    LS = slope_length_factor.multiply(slope_steepness).rename('LS')
+
+    # K-factor from OpenLandMap soil texture class
+    soil_texture = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02').select('b0')
+    K = ee.Image(0.032) \
+        .where(soil_texture.eq(1),  0.022) \
+        .where(soil_texture.eq(2),  0.025) \
+        .where(soil_texture.eq(3),  0.032) \
+        .where(soil_texture.eq(4),  0.035) \
+        .where(soil_texture.eq(5),  0.038) \
+        .where(soil_texture.eq(6),  0.030) \
+        .where(soil_texture.eq(7),  0.040) \
+        .where(soil_texture.eq(8),  0.042) \
+        .where(soil_texture.eq(9),  0.028) \
+        .where(soil_texture.eq(10), 0.045) \
+        .where(soil_texture.eq(11), 0.020) \
+        .where(soil_texture.eq(12), 0.013) \
+        .rename('K')
+
+    P = ee.Image(1).rename('P')
+
+    return K, LS, P, slope_deg
+
+
+def _get_r_factor(year, geom):
+    """Calculate R-factor (Rainfall Erosivity) from CHIRPS for a year."""
+    import ee
+    start = ee.Date.fromYMD(year, 1, 1)
+    end = ee.Date.fromYMD(year, 12, 31)
+    chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY') \
+        .filterDate(start, end) \
+        .filterBounds(geom)
+    annual_p = chirps.sum().rename('annual_P')
+
+    months = ee.List.sequence(1, 12)
+    monthly_sq_sum = ee.ImageCollection(months.map(lambda m: (
+        chirps.filterDate(
+            ee.Date.fromYMD(year, ee.Number(m), 1),
+            ee.Date.fromYMD(year, ee.Number(m), 1).advance(1, 'month')
+        ).sum().rename('monthly_P').pow(2)
+    ))).sum()
+
+    R = monthly_sq_sum.divide(annual_p.max(1)).multiply(1.735).rename('R').clip(geom)
+    return R
+
+
+def _get_c_factor(ndvi):
+    """Calculate C-factor from NDVI (Van der Knijff et al. 2000)."""
+    import ee
+    ndvi_clamped = ndvi.max(0).min(0.99)
+    C = ndvi_clamped.multiply(2.0).divide(ee.Image(1.0).subtract(ndvi_clamped)) \
+        .multiply(-1).exp() \
+        .min(1).max(0) \
+        .rename('C')
+    return C
+
+
 def _get_erosion_for_year(year):
-    """Compute erosion risk raster for a given year."""
+    """Compute RUSLE soil loss (A = R x K x LS x C x P) for a given year."""
     import ee
     geom = _load_wetland_geometry()
     start = ee.Date.fromYMD(year, 1, 1)
@@ -451,24 +532,30 @@ def _get_erosion_for_year(year):
         .filterBounds(geom) \
         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
 
-    bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
-    slope = ee.Terrain.slope(ee.Image('USGS/SRTMGL1_003')).clip(geom)
+    ndvi = col.map(_calculate_ndvi).select('NDVI').mean().clip(geom)
 
-    risk = ee.Image(0) \
-        .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
-        .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
-        .clip(geom).rename('erosion_risk')
+    K, LS, P, slope_deg = _get_rusle_factors()
+    R = _get_r_factor(year, geom)
+    C = _get_c_factor(ndvi)
 
-    return risk, bsi
+    soil_loss = R.multiply(K.clip(geom)) \
+        .multiply(LS.clip(geom)) \
+        .multiply(C) \
+        .multiply(P.clip(geom)) \
+        .rename('soil_loss')
+
+    return soil_loss
 
 
-def _classify_erosion(mean_risk):
-    """Classify mean risk value into a label."""
-    if mean_risk is None:
+def _classify_erosion(mean_soil_loss):
+    """Classify mean soil loss (t/ha/yr) into a label."""
+    if mean_soil_loss is None:
         return 'No Data'
-    if mean_risk > 1.5:
+    if mean_soil_loss >= 30:
+        return 'Very High'
+    if mean_soil_loss >= 15:
         return 'High'
-    if mean_risk > 0.5:
+    if mean_soil_loss >= 5:
         return 'Moderate'
     return 'Low'
 
@@ -481,7 +568,7 @@ def erosion_view(request):
 
 
 def wetland_erosion(request):
-    """Return per-polygon erosion risk for a given year + tile URL."""
+    """Return per-polygon RUSLE soil loss for a given year + tile URL."""
     import ee
     initialize_ee()
 
@@ -494,19 +581,19 @@ def wetland_erosion(request):
         return JsonResponse({'error': 'Invalid year parameter'}, status=400)
 
     try:
-        risk, bsi = _get_erosion_for_year(year)
+        soil_loss = _get_erosion_for_year(year)
         polygons = _get_wetland_polygon_fc()
 
-        # Tile URL for the erosion risk raster
-        risk_vis = risk.visualize(
-            min=0, max=2,
-            palette=['#1a9850', '#fee08b', '#d73027']
+        # Tile URL for soil loss raster
+        sl_vis = soil_loss.visualize(
+            min=0, max=40,
+            palette=['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027', '#7f0000']
         )
-        risk_map = risk_vis.getMapId()
-        tile_url = risk_map['tile_fetcher'].url_format
+        sl_map = sl_vis.getMapId()
+        tile_url = sl_map['tile_fetcher'].url_format
 
         # Per-polygon stats
-        stats = risk.reduceRegions(
+        stats = soil_loss.reduceRegions(
             collection=polygons,
             reducer=ee.Reducer.mean(),
             scale=10,
@@ -518,11 +605,10 @@ def wetland_erosion(request):
         polygon_data = []
         for i, feature in enumerate(data['features']):
             props = feature['properties']
-            mean_risk = props.get('mean')
-            if mean_risk is not None:
-                mean_risk = round(mean_risk, 3)
+            mean_sl = props.get('mean')
+            if mean_sl is not None:
+                mean_sl = round(mean_sl, 2)
 
-            # Compute centroid from coords for Leaflet markers
             coords = feature['geometry']['coordinates'][0]
             lngs = [c[0] for c in coords]
             lats = [c[1] for c in coords]
@@ -532,8 +618,8 @@ def wetland_erosion(request):
             polygon_data.append({
                 'index': i,
                 'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
-                'mean_risk': mean_risk,
-                'status': _classify_erosion(mean_risk),
+                'mean_soil_loss': mean_sl,
+                'status': _classify_erosion(mean_sl),
                 'centroid_lat': round(centroid_lat, 6),
                 'centroid_lng': round(centroid_lng, 6),
                 'coordinates': coords,
@@ -550,7 +636,7 @@ def wetland_erosion(request):
 
 
 def wetland_erosion_compare(request):
-    """Compare erosion risk between two years."""
+    """Compare RUSLE soil loss between two years."""
     import ee
     initialize_ee()
 
@@ -566,15 +652,14 @@ def wetland_erosion_compare(request):
         return JsonResponse({'error': 'Invalid year parameter'}, status=400)
 
     try:
-        risk_a, _ = _get_erosion_for_year(year_a)
-        risk_b, _ = _get_erosion_for_year(year_b)
+        sl_a = _get_erosion_for_year(year_a)
+        sl_b = _get_erosion_for_year(year_b)
         polygons = _get_wetland_polygon_fc()
 
-        diff = risk_b.subtract(risk_a).rename('erosion_change')
+        diff = sl_b.subtract(sl_a).rename('soil_loss_change')
 
-        # Tile URL for the change raster
         diff_vis = diff.visualize(
-            min=-2, max=2,
+            min=-20, max=20,
             palette=['#1a9850', '#91cf60', '#ffffbf', '#fc8d59', '#d73027']
         )
         diff_map = diff_vis.getMapId()
@@ -592,12 +677,12 @@ def wetland_erosion_compare(request):
         for i, feature in enumerate(data['features']):
             mean_change = feature['properties'].get('mean')
             if mean_change is not None:
-                mean_change = round(mean_change, 3)
+                mean_change = round(mean_change, 2)
             direction = 'stable'
             if mean_change is not None:
-                if mean_change > 0.05:
+                if mean_change > 1:
                     direction = 'worsening'
-                elif mean_change < -0.05:
+                elif mean_change < -1:
                     direction = 'improving'
             changes.append({
                 'index': i,
@@ -618,7 +703,7 @@ def wetland_erosion_compare(request):
 
 
 def wetland_erosion_predict(request):
-    """Return BSI trend (2017-2024) + predictions (2025-2030) per polygon."""
+    """Return RUSLE soil loss trend (2017-2024) + predictions (2025-2030) per polygon."""
     import ee
     initialize_ee()
 
@@ -627,25 +712,19 @@ def wetland_erosion_predict(request):
         polygons = _get_wetland_polygon_fc()
         years = list(range(2017, 2025))
 
-        # Build annual BSI images + linear fit
+        # Build annual soil loss images + linear fit
         stacked = None
         annual_images = []
         for yr in years:
-            start = ee.Date.fromYMD(yr, 1, 1)
-            end = ee.Date.fromYMD(yr, 12, 31)
-            col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-                .filterDate(start, end) \
-                .filterBounds(geom) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-            mean_bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
-            renamed = mean_bsi.rename('BSI_{}'.format(yr))
+            sl = _get_erosion_for_year(yr)
+            renamed = sl.rename('SL_{}'.format(yr))
             stacked = renamed if stacked is None else stacked.addBands(renamed)
             time_band = ee.Image.constant(yr).float().rename('year')
-            annual_images.append(mean_bsi.addBands(time_band).set('year', yr))
+            annual_images.append(sl.addBands(time_band).set('year', yr))
 
-        # Linear fit
+        # Linear fit: soil_loss = offset + scale * year
         annual_col = ee.ImageCollection(annual_images)
-        trend = annual_col.select(['year', 'BSI']).reduce(ee.Reducer.linearFit())
+        trend = annual_col.select(['year', 'soil_loss']).reduce(ee.Reducer.linearFit())
         stacked = stacked.addBands(trend)
 
         # Single server call
@@ -662,18 +741,18 @@ def wetland_erosion_predict(request):
             props = feature['properties']
             historical = {}
             for yr in years:
-                val = props.get('BSI_{}'.format(yr))
-                historical[str(yr)] = round(val, 4) if val is not None else None
+                val = props.get('SL_{}'.format(yr))
+                historical[str(yr)] = round(val, 2) if val is not None else None
 
             slope = props.get('scale')
             intercept = props.get('offset')
             predictions = {}
             if slope is not None and intercept is not None:
                 for yr in range(2025, 2031):
-                    predictions[str(yr)] = round(intercept + slope * yr, 4)
-                slope = round(slope, 6)
+                    predicted = max(0, intercept + slope * yr)
+                    predictions[str(yr)] = round(predicted, 2)
+                slope = round(slope, 4)
 
-            # Compute centroid
             coords = feature['geometry']['coordinates'][0]
             lngs = [c[0] for c in coords]
             lats = [c[1] for c in coords]

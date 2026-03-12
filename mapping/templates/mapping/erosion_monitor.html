@@ -1,7 +1,7 @@
 {% extends "mapping/base.html" %}
 
-{% block title %}Soil Erosion Monitor{% endblock %}
-{% block page_title %}Soil Erosion Risk Monitoring{% endblock %}
+{% block title %}RUSLE Soil Erosion Monitor{% endblock %}
+{% block page_title %}RUSLE Soil Erosion Monitoring{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -64,6 +64,7 @@
     .pill-Low      { background: #c8e6c9; color: #1b5e20; }
     .pill-Moderate { background: #fff9c4; color: #f57f17; }
     .pill-High     { background: #ffcdd2; color: #b71c1c; }
+    .pill-VeryHigh { background: #b71c1c; color: #fff; }
     .pill-NoData   { background: #eee;    color: #666; }
     .risk-tag {
         font-size: 11px; padding: 2px 8px; border-radius: 4px;
@@ -202,7 +203,7 @@
         <div class="erosion-panel">
             <!-- Year slider -->
             <div class="year-control">
-                <label>Sentinel-2 Annual Erosion Risk</label>
+                <label>RUSLE Soil Loss (t/ha/yr)</label>
                 <div class="year-row">
                     <span style="font-size:11px;color:#888;">2017</span>
                     <input type="range" id="yearSlider" min="2017" max="2024" value="2023" step="1">
@@ -217,14 +218,15 @@
                     <input type="checkbox" id="overlayToggle">
                     <span class="slider-toggle"></span>
                 </label>
-                <label for="overlayToggle">Show Erosion Risk Heat Map</label>
+                <label for="overlayToggle">Show Soil Loss Heat Map</label>
             </div>
 
             <!-- Summary -->
             <div class="summary-row">
-                <div class="summary-badge badge-low"><span class="count" id="cntLow">-</span>Low</div>
-                <div class="summary-badge badge-moderate"><span class="count" id="cntMod">-</span>Moderate</div>
-                <div class="summary-badge badge-high"><span class="count" id="cntHigh">-</span>High</div>
+                <div class="summary-badge badge-low"><span class="count" id="cntLow">-</span>&lt;5</div>
+                <div class="summary-badge badge-moderate"><span class="count" id="cntMod">-</span>5-15</div>
+                <div class="summary-badge badge-high"><span class="count" id="cntHigh">-</span>15-30</div>
+                <div class="summary-badge" style="background:#7f0000;color:#fff;"><span class="count" id="cntVHigh">-</span>&gt;30</div>
             </div>
 
             <!-- Polygon list -->
@@ -232,7 +234,7 @@
 
             <!-- Bar chart -->
             <div class="charts-section">
-                <h4>Erosion Risk by Wetland</h4>
+                <h4>Soil Loss by Wetland (t/ha/yr)</h4>
                 <canvas id="barChart" class="chart-canvas"></canvas>
             </div>
 
@@ -257,16 +259,16 @@
                         <option value="2023" selected>2023</option><option value="2024">2024</option>
                     </select>
                 </div>
-                <button class="compare-btn" id="compareBtn">Compare Erosion Change</button>
+                <button class="compare-btn" id="compareBtn">Compare Soil Loss Change</button>
                 <div class="compare-results" id="compareResults"></div>
             </div>
 
             <!-- Predict button -->
-            <button class="predict-btn" id="predictBtn">Load BSI Trend &amp; Predictions (2017 → 2030)</button>
+            <button class="predict-btn" id="predictBtn">Load Soil Loss Trend &amp; Predictions (2017 → 2030)</button>
 
             <!-- Prediction chart (hidden until loaded) -->
             <div class="predict-section" id="predictSection">
-                <h4>BSI Trend &amp; Predictions</h4>
+                <h4>Soil Loss Trend &amp; Predictions</h4>
                 <div class="rate-info" id="rateInfo"></div>
                 <canvas id="trendChart" class="chart-canvas" style="height:200px!important;"></canvas>
             </div>
@@ -280,10 +282,11 @@
 (function() {
     // ── constants ──
     const RISK_COLORS = {
-        'Low':      '#1a9850',
-        'Moderate': '#fee08b',
-        'High':     '#d73027',
-        'No Data':  '#9e9e9e'
+        'Low':       '#1a9850',
+        'Moderate':  '#fee08b',
+        'High':      '#d73027',
+        'Very High': '#7f0000',
+        'No Data':   '#9e9e9e'
     };
 
     // ── map ──
@@ -296,10 +299,11 @@
     const legend = L.control({ position: 'bottomright' });
     legend.onAdd = function() {
         const d = L.DomUtil.create('div', 'map-legend');
-        d.innerHTML = '<h4>Erosion Risk</h4>'
-            + '<div><span class="legend-dot" style="background:#1a9850"></span> Low (BSI ≤ 0.1 or slope ≤ 8°)</div>'
-            + '<div><span class="legend-dot" style="background:#fee08b"></span> Moderate (BSI &gt; 0.1 &amp; slope &gt; 8°)</div>'
-            + '<div><span class="legend-dot" style="background:#d73027"></span> High (BSI &gt; 0.2 &amp; slope &gt; 15°)</div>';
+        d.innerHTML = '<h4>RUSLE Soil Loss</h4>'
+            + '<div><span class="legend-dot" style="background:#1a9850"></span> Low (&lt; 5 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#fee08b"></span> Moderate (5–15 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#d73027"></span> High (15–30 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#7f0000"></span> Very High (&gt; 30 t/ha/yr)</div>';
         return d;
     };
     legend.addTo(map);
@@ -331,7 +335,7 @@
 
     // ── fetch erosion for a year ──
     async function loadYear(year) {
-        showOverlay('Computing erosion risk for ' + year + '…');
+        showOverlay('Computing RUSLE soil loss for ' + year + '…');
         try {
             const res = await fetch('/api/erosion-data/?year=' + year);
             const data = await res.json();
@@ -357,11 +361,12 @@
         }
 
         // counts
-        const counts = { Low: 0, Moderate: 0, High: 0 };
+        const counts = { Low: 0, Moderate: 0, High: 0, 'Very High': 0 };
         polygons.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
-        document.getElementById('cntLow').textContent  = counts.Low;
-        document.getElementById('cntMod').textContent   = counts.Moderate;
-        document.getElementById('cntHigh').textContent  = counts.High;
+        document.getElementById('cntLow').textContent   = counts.Low;
+        document.getElementById('cntMod').textContent    = counts.Moderate;
+        document.getElementById('cntHigh').textContent   = counts.High;
+        document.getElementById('cntVHigh').textContent  = counts['Very High'];
 
         // polygon list
         const listEl = document.getElementById('polyList');
@@ -373,7 +378,7 @@
 
         polygons.forEach(function(p) {
             const color = RISK_COLORS[p.status] || '#9e9e9e';
-            const riskStr = p.mean_risk !== null ? p.mean_risk.toFixed(3) : 'N/A';
+            const riskStr = p.mean_soil_loss !== null ? p.mean_soil_loss.toFixed(2) + ' t/ha/yr' : 'N/A';
 
             // draw polygon on map
             const latlngs = p.coordinates.map(function(c) { return [c[1], c[0]]; });
@@ -384,7 +389,7 @@
                 '<div class="erosion-popup"><h4>' + p.name + '</h4>'
                 + '<span class="status-pill pill-' + p.status.replace(/\s/g,'') + '">' + p.status + '</span>'
                 + '<table>'
-                + '<tr><td>Mean Risk</td><td><b>' + riskStr + '</b></td></tr>'
+                + '<tr><td>Soil Loss</td><td><b>' + riskStr + '</b></td></tr>'
                 + '<tr><td>Year</td><td>' + year + '</td></tr>'
                 + '</table></div>', { maxWidth: 220 }
             );
@@ -404,7 +409,7 @@
             li.innerHTML = '<div class="poly-name">' + p.name + '</div>'
                 + '<div class="poly-meta">'
                 + '<span class="status-pill pill-' + p.status.replace(/\s/g,'') + '">' + p.status + '</span>'
-                + '<span class="risk-tag">Risk: ' + riskStr + '</span>'
+                + '<span class="risk-tag">' + riskStr + '</span>'
                 + '</div>';
             li.addEventListener('click', function() {
                 document.querySelectorAll('.poly-item').forEach(function(el) { el.classList.remove('selected'); });
@@ -416,7 +421,7 @@
 
             // chart data
             labels.push(p.name.length > 12 ? p.name.substring(0, 12) + '…' : p.name);
-            risks.push(p.mean_risk);
+            risks.push(p.mean_soil_loss);
             colors.push(color);
         });
 
@@ -428,7 +433,7 @@
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Mean Risk',
+                    label: 'Soil Loss',
                     data: risks,
                     backgroundColor: colors,
                     borderRadius: 4,
@@ -440,8 +445,8 @@
                 plugins: { legend: { display: false } },
                 scales: {
                     y: {
-                        title: { display: true, text: 'Risk (0=Low, 2=High)', font: { size: 11 } },
-                        min: 0, max: 2
+                        title: { display: true, text: 'Soil Loss (t/ha/yr)', font: { size: 11 } },
+                        min: 0
                     },
                     x: { ticks: { font: { size: 9 } } }
                 }
@@ -495,7 +500,7 @@
                               c.direction === 'improving' ? '↓' : '→';
                 const cls = c.direction === 'worsening' ? 'color:#c62828' :
                             c.direction === 'improving' ? 'color:#1b5e20' : 'color:#555';
-                const val = c.mean_change !== null ? (c.mean_change > 0 ? '+' : '') + c.mean_change.toFixed(3) : 'N/A';
+                const val = c.mean_change !== null ? (c.mean_change > 0 ? '+' : '') + c.mean_change.toFixed(2) + ' t/ha/yr' : 'N/A';
                 html += '<div style="' + cls + '">' + c.name + ': ' + val + ' ' + arrow + ' ' + c.direction + '</div>';
             });
             resultsEl.innerHTML = html;
@@ -503,7 +508,7 @@
             alert('Compare failed: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Compare Erosion Change';
+            btn.textContent = 'Compare Soil Loss Change';
         }
     });
 
@@ -511,7 +516,7 @@
     document.getElementById('predictBtn').addEventListener('click', async function() {
         const btn = this;
         btn.disabled = true;
-        btn.textContent = 'Computing BSI trend (may take a minute)…';
+        btn.textContent = 'Computing soil loss trend (may take a minute)…';
         try {
             const res = await fetch('/api/erosion-predict/');
             const data = await res.json();
@@ -558,10 +563,10 @@
         // avg slope
         const slopes = polygons.filter(function(p) { return p.slope !== null; }).map(function(p) { return p.slope; });
         const avgSlope = slopes.length ? (slopes.reduce(function(a,b){ return a+b; }, 0) / slopes.length) : 0;
-        const direction = avgSlope >= 0 ? 'worsening (more bare soil)' : 'improving (less bare soil)';
+        const direction = avgSlope >= 0 ? 'worsening (increasing soil loss)' : 'improving (decreasing soil loss)';
         document.getElementById('rateInfo').textContent =
-            'Average BSI rate: ' + (avgSlope >= 0 ? '+' : '') + avgSlope.toFixed(6)
-            + ' BSI/year (' + direction + ')';
+            'Average rate: ' + (avgSlope >= 0 ? '+' : '') + avgSlope.toFixed(4)
+            + ' t/ha/yr² (' + direction + ')';
 
         // chart datasets
         const histData = histAvg.concat(Array(predYears.length).fill(null));
@@ -577,7 +582,7 @@
                 labels: allYears,
                 datasets: [
                     {
-                        label: 'Historical BSI',
+                        label: 'Historical Soil Loss',
                         data: histData,
                         borderColor: '#d73027',
                         backgroundColor: 'rgba(215,48,39,0.1)',
@@ -586,7 +591,7 @@
                         pointRadius: 4,
                     },
                     {
-                        label: 'Predicted BSI',
+                        label: 'Predicted Soil Loss',
                         data: predData,
                         borderColor: '#1a9850',
                         borderDash: [6, 4],
@@ -605,7 +610,7 @@
                 },
                 scales: {
                     y: {
-                        title: { display: true, text: 'Mean BSI', font: { size: 11 } }
+                        title: { display: true, text: 'Mean Soil Loss (t/ha/yr)', font: { size: 11 } }
                     },
                     x: { ticks: { font: { size: 10 } } }
                 }
