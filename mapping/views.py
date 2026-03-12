@@ -1,4 +1,5 @@
 import json
+import os
 
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
@@ -267,6 +268,15 @@ def wetland_lst(request):
 
         mean_lst = col.map(_calculate_lst).select('LST').mean()
 
+        # Generate tile URL for the LST raster overlay
+        lst_vis = mean_lst.visualize(
+            min=10, max=30,
+            palette=['#313695', '#4575b4', '#74add1', '#abd9e9',
+                     '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+        )
+        lst_map = lst_vis.getMapId()
+        tile_url = lst_map['tile_fetcher'].url_format
+
         results = mean_lst.reduceRegions(
             collection=sites,
             reducer=ee.Reducer.mean(),
@@ -291,7 +301,7 @@ def wetland_lst(request):
                 'health': _classify_health(temp),
             })
 
-        return JsonResponse({'year': year, 'sites': site_data})
+        return JsonResponse({'year': year, 'sites': site_data, 'tile_url': tile_url})
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -361,6 +371,326 @@ def wetland_lst_predict(request):
             })
 
         return JsonResponse({'sites': response_data})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Soil Erosion helpers ───────────────────────────────────────────
+
+# Wetland names mapped by polygon index (matched by centroid proximity to sample sites)
+WETLAND_NAMES = [
+    'Mantsonyane',                   # 0
+    'Oxbow',                         # 1
+    'Literapeng',                    # 2
+    'Leribe Lefikeng',               # 3
+    'Ha-Moroane',                    # 4
+    'Mathoane Ha-Khohlooa',          # 5
+    'Nazareth Toll-gate',            # 6
+    'Mohlakeng Mokema',              # 7
+    'Mohlakeng Mokema East',         # 8
+    'Mohlakeng Mokema South',        # 9
+    'Mohlakeng Mokema West',         # 10
+    "Mafeteng Tsita's Nek",          # 11
+    "Mohale's Hoek Ha-Makhathe",     # 12
+    "Lets'eng La Letsie",            # 13
+    'Quthing Ha-Rantema',            # 14
+    'Mokopung ha-Lepekola',          # 15
+    'Semonkong',                     # 16
+    'Semonkong (Upper)',             # 17
+    "Thaba-Tseka Mats'oana",         # 18
+    'White Hill ha-Sehapi',          # 19
+    "Rama's Gate",                   # 20
+    'Edward Dam',                    # 21
+    'SNP',                           # 22
+]
+
+
+def _load_wetland_geometry():
+    """Load wetland polygon geometry from JSON file."""
+    import ee
+    json_path = os.path.join(os.path.dirname(__file__), 'wetland_polygons.json')
+    with open(json_path, 'r', encoding='utf-8') as f:
+        geojson = json.load(f)
+    return ee.Geometry(geojson)
+
+
+def _get_wetland_polygon_fc():
+    """Build an EE FeatureCollection of individual wetland polygons."""
+    import ee
+    geom = _load_wetland_geometry()
+    return ee.FeatureCollection(
+        geom.geometries().map(lambda g: ee.Feature(ee.Geometry(g)))
+    )
+
+
+def _calculate_bsi(image):
+    """Calculate BSI for a Sentinel-2 image (server-side)."""
+    import ee
+    bsi = image.expression(
+        '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))',
+        {
+            'B11': image.select('B11'),
+            'B4':  image.select('B4'),
+            'B8':  image.select('B8'),
+            'B2':  image.select('B2'),
+        }
+    ).rename('BSI')
+    return image.addBands(bsi)
+
+
+def _get_erosion_for_year(year):
+    """Compute erosion risk raster for a given year."""
+    import ee
+    geom = _load_wetland_geometry()
+    start = ee.Date.fromYMD(year, 1, 1)
+    end = ee.Date.fromYMD(year, 12, 31)
+
+    col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+        .filterDate(start, end) \
+        .filterBounds(geom) \
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+
+    bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
+    slope = ee.Terrain.slope(ee.Image('USGS/SRTMGL1_003')).clip(geom)
+
+    risk = ee.Image(0) \
+        .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
+        .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
+        .clip(geom).rename('erosion_risk')
+
+    return risk, bsi
+
+
+def _classify_erosion(mean_risk):
+    """Classify mean risk value into a label."""
+    if mean_risk is None:
+        return 'No Data'
+    if mean_risk > 1.5:
+        return 'High'
+    if mean_risk > 0.5:
+        return 'Moderate'
+    return 'Low'
+
+
+# ── Erosion views ──────────────────────────────────────────────────
+
+def erosion_view(request):
+    """Render the soil erosion monitoring page."""
+    return render(request, 'mapping/erosion_monitor.html', {'active_page': 'erosion'})
+
+
+def wetland_erosion(request):
+    """Return per-polygon erosion risk for a given year + tile URL."""
+    import ee
+    initialize_ee()
+
+    year = request.GET.get('year', '2023')
+    try:
+        year = int(year)
+        if year < 2017 or year > 2024:
+            return JsonResponse({'error': 'Year must be between 2017 and 2024'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    try:
+        risk, bsi = _get_erosion_for_year(year)
+        polygons = _get_wetland_polygon_fc()
+
+        # Tile URL for the erosion risk raster
+        risk_vis = risk.visualize(
+            min=0, max=2,
+            palette=['#1a9850', '#fee08b', '#d73027']
+        )
+        risk_map = risk_vis.getMapId()
+        tile_url = risk_map['tile_fetcher'].url_format
+
+        # Per-polygon stats
+        stats = risk.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=10,
+            tileScale=4,
+        )
+
+        data = stats.getInfo()
+
+        polygon_data = []
+        for i, feature in enumerate(data['features']):
+            props = feature['properties']
+            mean_risk = props.get('mean')
+            if mean_risk is not None:
+                mean_risk = round(mean_risk, 3)
+
+            # Compute centroid from coords for Leaflet markers
+            coords = feature['geometry']['coordinates'][0]
+            lngs = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            centroid_lng = sum(lngs) / len(lngs)
+            centroid_lat = sum(lats) / len(lats)
+
+            polygon_data.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'mean_risk': mean_risk,
+                'status': _classify_erosion(mean_risk),
+                'centroid_lat': round(centroid_lat, 6),
+                'centroid_lng': round(centroid_lng, 6),
+                'coordinates': coords,
+            })
+
+        return JsonResponse({
+            'year': year,
+            'tile_url': tile_url,
+            'polygons': polygon_data,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def wetland_erosion_compare(request):
+    """Compare erosion risk between two years."""
+    import ee
+    initialize_ee()
+
+    year_a = request.GET.get('year_a', '2018')
+    year_b = request.GET.get('year_b', '2023')
+    try:
+        year_a = int(year_a)
+        year_b = int(year_b)
+        for y in (year_a, year_b):
+            if y < 2017 or y > 2024:
+                return JsonResponse({'error': 'Years must be between 2017 and 2024'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    try:
+        risk_a, _ = _get_erosion_for_year(year_a)
+        risk_b, _ = _get_erosion_for_year(year_b)
+        polygons = _get_wetland_polygon_fc()
+
+        diff = risk_b.subtract(risk_a).rename('erosion_change')
+
+        # Tile URL for the change raster
+        diff_vis = diff.visualize(
+            min=-2, max=2,
+            palette=['#1a9850', '#91cf60', '#ffffbf', '#fc8d59', '#d73027']
+        )
+        diff_map = diff_vis.getMapId()
+        tile_url = diff_map['tile_fetcher'].url_format
+
+        stats = diff.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=10,
+            tileScale=4,
+        )
+        data = stats.getInfo()
+
+        changes = []
+        for i, feature in enumerate(data['features']):
+            mean_change = feature['properties'].get('mean')
+            if mean_change is not None:
+                mean_change = round(mean_change, 3)
+            direction = 'stable'
+            if mean_change is not None:
+                if mean_change > 0.05:
+                    direction = 'worsening'
+                elif mean_change < -0.05:
+                    direction = 'improving'
+            changes.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'mean_change': mean_change,
+                'direction': direction,
+            })
+
+        return JsonResponse({
+            'year_a': year_a,
+            'year_b': year_b,
+            'tile_url': tile_url,
+            'changes': changes,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def wetland_erosion_predict(request):
+    """Return BSI trend (2017-2024) + predictions (2025-2030) per polygon."""
+    import ee
+    initialize_ee()
+
+    try:
+        geom = _load_wetland_geometry()
+        polygons = _get_wetland_polygon_fc()
+        years = list(range(2017, 2025))
+
+        # Build annual BSI images + linear fit
+        stacked = None
+        annual_images = []
+        for yr in years:
+            start = ee.Date.fromYMD(yr, 1, 1)
+            end = ee.Date.fromYMD(yr, 12, 31)
+            col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+                .filterDate(start, end) \
+                .filterBounds(geom) \
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+            mean_bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
+            renamed = mean_bsi.rename('BSI_{}'.format(yr))
+            stacked = renamed if stacked is None else stacked.addBands(renamed)
+            time_band = ee.Image.constant(yr).float().rename('year')
+            annual_images.append(mean_bsi.addBands(time_band).set('year', yr))
+
+        # Linear fit
+        annual_col = ee.ImageCollection(annual_images)
+        trend = annual_col.select(['year', 'BSI']).reduce(ee.Reducer.linearFit())
+        stacked = stacked.addBands(trend)
+
+        # Single server call
+        results = stacked.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=30,
+            tileScale=4,
+        )
+        data = results.getInfo()
+
+        polygon_data = []
+        for i, feature in enumerate(data['features']):
+            props = feature['properties']
+            historical = {}
+            for yr in years:
+                val = props.get('BSI_{}'.format(yr))
+                historical[str(yr)] = round(val, 4) if val is not None else None
+
+            slope = props.get('scale')
+            intercept = props.get('offset')
+            predictions = {}
+            if slope is not None and intercept is not None:
+                for yr in range(2025, 2031):
+                    predictions[str(yr)] = round(intercept + slope * yr, 4)
+                slope = round(slope, 6)
+
+            # Compute centroid
+            coords = feature['geometry']['coordinates'][0]
+            lngs = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            centroid_lng = sum(lngs) / len(lngs)
+            centroid_lat = sum(lats) / len(lats)
+
+            polygon_data.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'centroid_lat': round(centroid_lat, 6),
+                'centroid_lng': round(centroid_lng, 6),
+                'historical': historical,
+                'slope': slope,
+                'predictions': predictions,
+            })
+
+        return JsonResponse({'polygons': polygon_data})
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

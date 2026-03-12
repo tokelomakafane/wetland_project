@@ -117,6 +117,10 @@
                 <span class="nav-icon">&#127777;</span>
                 <span class="nav-label">LST Monitor</span>
             </a>
+            <a href="{% url 'mapping:erosion' %}" class="nav-item {% if active_page == 'erosion' %}active{% endif %}">
+                <span class="nav-icon">&#127755;</span>
+                <span class="nav-label">Soil Erosion</span>
+            </a>
             <a href="{% url 'mapping:alerts' %}" class="nav-item {% if active_page == 'alerts' %}active{% endif %}">
                 <span class="nav-icon">&#128276;</span>
                 <span class="nav-label">Alerts</span>
