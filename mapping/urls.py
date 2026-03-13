@@ -18,4 +18,8 @@ urlpatterns = [
     path('api/sample-sites/', views.sample_sites, name='sample_sites'),
     path('api/lst-data/', views.wetland_lst, name='lst_data'),
     path('api/lst-predict/', views.wetland_lst_predict, name='lst_predict'),
+    path('erosion/', views.erosion_view, name='erosion'),
+    path('api/erosion-data/', views.wetland_erosion, name='erosion_data'),
+    path('api/erosion-compare/', views.wetland_erosion_compare, name='erosion_compare'),
+    path('api/erosion-predict/', views.wetland_erosion_predict, name='erosion_predict'),
 ]

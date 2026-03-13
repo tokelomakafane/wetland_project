@@ -1,0 +1,625 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}RUSLE Soil Erosion Monitor{% endblock %}
+{% block page_title %}RUSLE Soil Erosion Monitoring{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── Layout ── */
+    .erosion-page { display: flex; flex-direction: column; height: 100%; }
+    .erosion-top { display: flex; flex: 1; min-height: 0; }
+    .erosion-map { flex: 1; position: relative; min-height: 0; }
+    .erosion-panel {
+        width: 380px; background: #fff; border-left: 1px solid #e0e0e0;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Year slider ── */
+    .year-control {
+        padding: 14px 18px; background: #f8f9fa;
+        border-bottom: 1px solid #eee;
+    }
+    .year-control label { font-size: 13px; font-weight: 600; color: #333; }
+    .year-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+    .year-row input[type=range] { flex: 1; }
+    .year-badge {
+        background: #d73027; color: #fff; padding: 4px 14px;
+        border-radius: 16px; font-size: 14px; font-weight: 700;
+        min-width: 54px; text-align: center;
+    }
+
+    /* ── Summary badges ── */
+    .summary-row {
+        display: flex; gap: 6px; padding: 10px 18px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .summary-badge {
+        flex: 1; text-align: center; padding: 8px 4px;
+        border-radius: 8px; font-size: 10px; font-weight: 600;
+    }
+    .summary-badge .count {
+        font-size: 20px; font-weight: 700; display: block;
+    }
+    .badge-low      { background: #e8f5e9; color: #1b5e20; }
+    .badge-moderate { background: #fff8e1; color: #f57f17; }
+    .badge-high     { background: #ffebee; color: #c62828; }
+
+    /* ── Polygon list ── */
+    .poly-list {
+        list-style: none; padding: 0; margin: 0;
+        overflow-y: auto; flex: 1;
+    }
+    .poly-item {
+        padding: 10px 18px; border-bottom: 1px solid #f5f5f5;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .poly-item:hover { background: #f8f9fa; }
+    .poly-item.selected { background: #fce4ec; border-left: 3px solid #d73027; }
+    .poly-name { font-size: 13px; font-weight: 600; color: #333; }
+    .poly-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .status-pill {
+        font-size: 10px; font-weight: 700; padding: 3px 10px;
+        border-radius: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .pill-Low      { background: #c8e6c9; color: #1b5e20; }
+    .pill-Moderate { background: #fff9c4; color: #f57f17; }
+    .pill-High     { background: #ffcdd2; color: #b71c1c; }
+    .pill-VeryHigh { background: #b71c1c; color: #fff; }
+    .pill-NoData   { background: #eee;    color: #666; }
+    .risk-tag {
+        font-size: 11px; padding: 2px 8px; border-radius: 4px;
+        background: #f0f0f0; color: #333; font-weight: 600;
+    }
+
+    /* ── Charts panel ── */
+    .charts-section {
+        border-top: 1px solid #ddd; background: #fff;
+        padding: 0 18px 14px;
+    }
+    .charts-section h4 {
+        font-size: 13px; color: #333; margin: 12px 0 6px; font-weight: 600;
+    }
+    .chart-canvas { width: 100% !important; height: 180px !important; }
+
+    /* ── Compare section ── */
+    .compare-section {
+        padding: 10px 18px; border-top: 1px solid #eee;
+        background: #f8f9fa;
+    }
+    .compare-section h4 {
+        font-size: 13px; font-weight: 600; color: #333; margin: 0 0 8px;
+    }
+    .compare-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .compare-row label { font-size: 11px; color: #555; min-width: 50px; }
+    .compare-row select {
+        flex: 1; padding: 4px 8px; border: 1px solid #ccc;
+        border-radius: 4px; font-size: 12px;
+    }
+    .compare-btn {
+        width: 100%; padding: 8px; background: #5c6bc0; color: #fff;
+        border: none; border-radius: 6px; font-size: 12px; font-weight: 600;
+        cursor: pointer; margin-top: 4px;
+    }
+    .compare-btn:hover { background: #3f51b5; }
+    .compare-btn:disabled { background: #b0bec5; cursor: default; }
+    .compare-results {
+        font-size: 11px; color: #333; margin-top: 8px;
+        max-height: 90px; overflow-y: auto;
+    }
+
+    /* ── Predict button & section ── */
+    .predict-btn {
+        display: block; width: calc(100% - 36px); margin: 8px 18px 14px;
+        padding: 10px; background: #d73027; color: #fff; border: none;
+        border-radius: 8px; font-size: 13px; font-weight: 600;
+        cursor: pointer; text-align: center;
+    }
+    .predict-btn:hover { background: #b71c1c; }
+    .predict-btn:disabled { background: #b0bec5; cursor: default; }
+
+    .predict-section {
+        border-top: 2px solid #d73027; background: #fff8f6;
+        padding: 0 18px 14px; display: none;
+    }
+    .predict-section.show { display: block; }
+    .predict-section h4 {
+        font-size: 13px; color: #d73027; margin: 12px 0 6px; font-weight: 600;
+    }
+    .rate-info {
+        font-size: 11px; padding: 6px 10px; background: #fce4ec;
+        border-radius: 6px; margin-bottom: 8px; color: #b71c1c;
+    }
+
+    /* ── Overlay toggle ── */
+    .overlay-toggle {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 18px; border-bottom: 1px solid #eee;
+        background: #f8f9fa;
+    }
+    .overlay-toggle label { font-size: 12px; color: #333; cursor: pointer; }
+    .switch { position: relative; width: 36px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle {
+        position: absolute; inset: 0; background: #ccc;
+        border-radius: 20px; cursor: pointer; transition: 0.3s;
+    }
+    .slider-toggle::before {
+        content: ''; position: absolute; height: 14px; width: 14px;
+        left: 3px; bottom: 3px; background: #fff;
+        border-radius: 50%; transition: 0.3s;
+    }
+    .switch input:checked + .slider-toggle { background: #d73027; }
+    .switch input:checked + .slider-toggle::before { transform: translateX(16px); }
+
+    /* ── Loading overlay ── */
+    .overlay {
+        position: absolute; inset: 0; background: rgba(255,255,255,0.85);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; flex-direction: column; gap: 10px;
+    }
+    .overlay.hidden { display: none; }
+    .spinner {
+        width: 36px; height: 36px; border: 4px solid #ddd;
+        border-top-color: #d73027; border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .overlay-text { font-size: 13px; color: #555; }
+
+    /* ── Legend ── */
+    .map-legend {
+        background: white; padding: 10px 14px; border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 12px;
+        line-height: 22px;
+    }
+    .map-legend h4 { margin: 0 0 6px; font-size: 13px; }
+    .legend-dot {
+        width: 12px; height: 12px; border-radius: 50%;
+        display: inline-block; margin-right: 6px; vertical-align: middle;
+    }
+
+    /* ── Popup ── */
+    .erosion-popup h4 { margin: 0 0 6px; font-size: 14px; }
+    .erosion-popup table { width: 100%; font-size: 12px; border-collapse: collapse; }
+    .erosion-popup td { padding: 2px 0; }
+    .erosion-popup td:first-child { color: #888; width: 90px; }
+    .leaflet-popup-content-wrapper { border-radius: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erosion-page">
+    <div class="erosion-top">
+        <!-- MAP -->
+        <div class="erosion-map">
+            <div id="erosionMap" style="width:100%;height:100%;"></div>
+            <div class="overlay hidden" id="mapOverlay">
+                <div class="spinner"></div>
+                <span class="overlay-text" id="overlayText">Loading erosion data from Google Earth Engine…</span>
+            </div>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="erosion-panel">
+            <!-- Year slider -->
+            <div class="year-control">
+                <label>RUSLE Soil Loss (t/ha/yr)</label>
+                <div class="year-row">
+                    <span style="font-size:11px;color:#888;">2017</span>
+                    <input type="range" id="yearSlider" min="2017" max="2024" value="2023" step="1">
+                    <span style="font-size:11px;color:#888;">2024</span>
+                    <span class="year-badge" id="yearLabel">2023</span>
+                </div>
+            </div>
+
+            <!-- Overlay toggle -->
+            <div class="overlay-toggle">
+                <label class="switch">
+                    <input type="checkbox" id="overlayToggle">
+                    <span class="slider-toggle"></span>
+                </label>
+                <label for="overlayToggle">Show Soil Loss Heat Map</label>
+            </div>
+
+            <!-- Summary -->
+            <div class="summary-row">
+                <div class="summary-badge badge-low"><span class="count" id="cntLow">-</span>&lt;5</div>
+                <div class="summary-badge badge-moderate"><span class="count" id="cntMod">-</span>5-15</div>
+                <div class="summary-badge badge-high"><span class="count" id="cntHigh">-</span>15-30</div>
+                <div class="summary-badge" style="background:#7f0000;color:#fff;"><span class="count" id="cntVHigh">-</span>&gt;30</div>
+            </div>
+
+            <!-- Polygon list -->
+            <ul class="poly-list" id="polyList"></ul>
+
+            <!-- Bar chart -->
+            <div class="charts-section">
+                <h4>Soil Loss by Wetland (t/ha/yr)</h4>
+                <canvas id="barChart" class="chart-canvas"></canvas>
+            </div>
+
+            <!-- Compare section -->
+            <div class="compare-section">
+                <h4>Compare Two Years</h4>
+                <div class="compare-row">
+                    <label>Year A:</label>
+                    <select id="yearA">
+                        <option value="2017">2017</option><option value="2018" selected>2018</option>
+                        <option value="2019">2019</option><option value="2020">2020</option>
+                        <option value="2021">2021</option><option value="2022">2022</option>
+                        <option value="2023">2023</option><option value="2024">2024</option>
+                    </select>
+                </div>
+                <div class="compare-row">
+                    <label>Year B:</label>
+                    <select id="yearB">
+                        <option value="2017">2017</option><option value="2018">2018</option>
+                        <option value="2019">2019</option><option value="2020">2020</option>
+                        <option value="2021">2021</option><option value="2022">2022</option>
+                        <option value="2023" selected>2023</option><option value="2024">2024</option>
+                    </select>
+                </div>
+                <button class="compare-btn" id="compareBtn">Compare Soil Loss Change</button>
+                <div class="compare-results" id="compareResults"></div>
+            </div>
+
+            <!-- Predict button -->
+            <button class="predict-btn" id="predictBtn">Load Soil Loss Trend &amp; Predictions (2017 → 2030)</button>
+
+            <!-- Prediction chart (hidden until loaded) -->
+            <div class="predict-section" id="predictSection">
+                <h4>Soil Loss Trend &amp; Predictions</h4>
+                <div class="rate-info" id="rateInfo"></div>
+                <canvas id="trendChart" class="chart-canvas" style="height:200px!important;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    // ── constants ──
+    const RISK_COLORS = {
+        'Low':       '#1a9850',
+        'Moderate':  '#fee08b',
+        'High':      '#d73027',
+        'Very High': '#7f0000',
+        'No Data':   '#9e9e9e'
+    };
+
+    // ── map ──
+    const map = L.map('erosionMap', { center: [-29.6, 28.3], zoom: 8 });
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google', maxZoom: 20
+    }).addTo(map);
+
+    // legend
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = function() {
+        const d = L.DomUtil.create('div', 'map-legend');
+        d.innerHTML = '<h4>RUSLE Soil Loss</h4>'
+            + '<div><span class="legend-dot" style="background:#1a9850"></span> Low (&lt; 5 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#fee08b"></span> Moderate (5–15 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#d73027"></span> High (15–30 t/ha/yr)</div>'
+            + '<div><span class="legend-dot" style="background:#7f0000"></span> Very High (&gt; 30 t/ha/yr)</div>';
+        return d;
+    };
+    legend.addTo(map);
+
+    let polyLayers = [];
+    let markers = [];
+    let riskTileLayer = null;
+    let compareTileLayer = null;
+    let barChart = null;
+    let trendChart = null;
+
+    // ── overlay helpers ──
+    function showOverlay(msg) {
+        document.getElementById('overlayText').textContent = msg || 'Loading…';
+        document.getElementById('mapOverlay').classList.remove('hidden');
+    }
+    function hideOverlay() {
+        document.getElementById('mapOverlay').classList.add('hidden');
+    }
+
+    function clearLayers() {
+        polyLayers.forEach(l => map.removeLayer(l));
+        polyLayers = [];
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+        if (riskTileLayer) { map.removeLayer(riskTileLayer); riskTileLayer = null; }
+        if (compareTileLayer) { map.removeLayer(compareTileLayer); compareTileLayer = null; }
+    }
+
+    // ── fetch erosion for a year ──
+    async function loadYear(year) {
+        showOverlay('Computing RUSLE soil loss for ' + year + '…');
+        try {
+            const res = await fetch('/api/erosion-data/?year=' + year);
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            renderPolygons(data.polygons, year, data.tile_url);
+        } catch (e) {
+            alert('Failed to load data: ' + e.message);
+        } finally {
+            hideOverlay();
+        }
+    }
+
+    // ── render polygons on map + panel + chart ──
+    function renderPolygons(polygons, year, tileUrl) {
+        clearLayers();
+
+        // Add risk raster overlay (if toggle is on)
+        if (tileUrl) {
+            riskTileLayer = L.tileLayer(tileUrl, { opacity: 0.6, maxZoom: 20 });
+            if (document.getElementById('overlayToggle').checked) {
+                riskTileLayer.addTo(map);
+            }
+        }
+
+        // counts
+        const counts = { Low: 0, Moderate: 0, High: 0, 'Very High': 0 };
+        polygons.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+        document.getElementById('cntLow').textContent   = counts.Low;
+        document.getElementById('cntMod').textContent    = counts.Moderate;
+        document.getElementById('cntHigh').textContent   = counts.High;
+        document.getElementById('cntVHigh').textContent  = counts['Very High'];
+
+        // polygon list
+        const listEl = document.getElementById('polyList');
+        listEl.innerHTML = '';
+
+        const labels = [];
+        const risks = [];
+        const colors = [];
+
+        polygons.forEach(function(p) {
+            const color = RISK_COLORS[p.status] || '#9e9e9e';
+            const riskStr = p.mean_soil_loss !== null ? p.mean_soil_loss.toFixed(2) + ' t/ha/yr' : 'N/A';
+
+            // draw polygon on map
+            const latlngs = p.coordinates.map(function(c) { return [c[1], c[0]]; });
+            const poly = L.polygon(latlngs, {
+                color: color, weight: 2, fillColor: color, fillOpacity: 0.35
+            }).addTo(map);
+            poly.bindPopup(
+                '<div class="erosion-popup"><h4>' + p.name + '</h4>'
+                + '<span class="status-pill pill-' + p.status.replace(/\s/g,'') + '">' + p.status + '</span>'
+                + '<table>'
+                + '<tr><td>Soil Loss</td><td><b>' + riskStr + '</b></td></tr>'
+                + '<tr><td>Year</td><td>' + year + '</td></tr>'
+                + '</table></div>', { maxWidth: 220 }
+            );
+            polyLayers.push(poly);
+
+            // centroid marker
+            const mk = L.circleMarker([p.centroid_lat, p.centroid_lng], {
+                radius: 10, fillColor: color, color: '#fff',
+                weight: 2, opacity: 1, fillOpacity: 0.9
+            }).addTo(map);
+            mk.bindTooltip(p.name + ': ' + p.status, { permanent: false });
+            markers.push(mk);
+
+            // list item
+            const li = document.createElement('li');
+            li.className = 'poly-item';
+            li.innerHTML = '<div class="poly-name">' + p.name + '</div>'
+                + '<div class="poly-meta">'
+                + '<span class="status-pill pill-' + p.status.replace(/\s/g,'') + '">' + p.status + '</span>'
+                + '<span class="risk-tag">' + riskStr + '</span>'
+                + '</div>';
+            li.addEventListener('click', function() {
+                document.querySelectorAll('.poly-item').forEach(function(el) { el.classList.remove('selected'); });
+                li.classList.add('selected');
+                map.fitBounds(poly.getBounds(), { maxZoom: 14 });
+                poly.openPopup();
+            });
+            listEl.appendChild(li);
+
+            // chart data
+            labels.push(p.name.length > 12 ? p.name.substring(0, 12) + '…' : p.name);
+            risks.push(p.mean_soil_loss);
+            colors.push(color);
+        });
+
+        // bar chart
+        if (barChart) barChart.destroy();
+        const ctx = document.getElementById('barChart').getContext('2d');
+        barChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Soil Loss',
+                    data: risks,
+                    backgroundColor: colors,
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Soil Loss (t/ha/yr)', font: { size: 11 } },
+                        min: 0
+                    },
+                    x: { ticks: { font: { size: 9 } } }
+                }
+            }
+        });
+    }
+
+    // ── year slider ──
+    const slider = document.getElementById('yearSlider');
+    const yearLabel = document.getElementById('yearLabel');
+    slider.addEventListener('input', function() {
+        yearLabel.textContent = this.value;
+    });
+    slider.addEventListener('change', function() {
+        loadYear(parseInt(this.value));
+    });
+
+    // ── overlay toggle ──
+    document.getElementById('overlayToggle').addEventListener('change', function() {
+        if (!riskTileLayer) return;
+        if (this.checked) {
+            riskTileLayer.addTo(map);
+        } else {
+            map.removeLayer(riskTileLayer);
+        }
+    });
+
+    // ── year comparison ──
+    document.getElementById('compareBtn').addEventListener('click', async function() {
+        const btn = this;
+        const yearA = document.getElementById('yearA').value;
+        const yearB = document.getElementById('yearB').value;
+        btn.disabled = true;
+        btn.textContent = 'Computing…';
+        const resultsEl = document.getElementById('compareResults');
+        resultsEl.innerHTML = '';
+
+        try {
+            const res = await fetch('/api/erosion-compare/?year_a=' + yearA + '&year_b=' + yearB);
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+
+            // Show change tile layer
+            if (compareTileLayer) map.removeLayer(compareTileLayer);
+            compareTileLayer = L.tileLayer(data.tile_url, { opacity: 0.6, maxZoom: 20 }).addTo(map);
+
+            // Show per-polygon changes
+            let html = '<b>' + yearA + ' → ' + yearB + '</b><br>';
+            data.changes.forEach(function(c) {
+                const arrow = c.direction === 'worsening' ? '↑' :
+                              c.direction === 'improving' ? '↓' : '→';
+                const cls = c.direction === 'worsening' ? 'color:#c62828' :
+                            c.direction === 'improving' ? 'color:#1b5e20' : 'color:#555';
+                const val = c.mean_change !== null ? (c.mean_change > 0 ? '+' : '') + c.mean_change.toFixed(2) + ' t/ha/yr' : 'N/A';
+                html += '<div style="' + cls + '">' + c.name + ': ' + val + ' ' + arrow + ' ' + c.direction + '</div>';
+            });
+            resultsEl.innerHTML = html;
+        } catch (e) {
+            alert('Compare failed: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Compare Soil Loss Change';
+        }
+    });
+
+    // ── predictions ──
+    document.getElementById('predictBtn').addEventListener('click', async function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = 'Computing soil loss trend (may take a minute)…';
+        try {
+            const res = await fetch('/api/erosion-predict/');
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            renderPredictions(data.polygons);
+        } catch (e) {
+            alert('Failed: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Reload Predictions';
+        }
+    });
+
+    function renderPredictions(polygons) {
+        const section = document.getElementById('predictSection');
+        section.classList.add('show');
+
+        const histYears = [];
+        for (let y = 2017; y <= 2024; y++) histYears.push(String(y));
+        const predYears = [];
+        for (let y = 2025; y <= 2030; y++) predYears.push(String(y));
+        const allYears = histYears.concat(predYears);
+
+        // per-year averages across polygons
+        const histAvg = histYears.map(function(yr) {
+            let sum = 0, cnt = 0;
+            polygons.forEach(function(p) {
+                if (p.historical[yr] !== null && p.historical[yr] !== undefined) {
+                    sum += p.historical[yr]; cnt++;
+                }
+            });
+            return cnt > 0 ? +(sum / cnt).toFixed(4) : null;
+        });
+        const predAvg = predYears.map(function(yr) {
+            let sum = 0, cnt = 0;
+            polygons.forEach(function(p) {
+                if (p.predictions[yr] !== undefined && p.predictions[yr] !== null) {
+                    sum += p.predictions[yr]; cnt++;
+                }
+            });
+            return cnt > 0 ? +(sum / cnt).toFixed(4) : null;
+        });
+
+        // avg slope
+        const slopes = polygons.filter(function(p) { return p.slope !== null; }).map(function(p) { return p.slope; });
+        const avgSlope = slopes.length ? (slopes.reduce(function(a,b){ return a+b; }, 0) / slopes.length) : 0;
+        const direction = avgSlope >= 0 ? 'worsening (increasing soil loss)' : 'improving (decreasing soil loss)';
+        document.getElementById('rateInfo').textContent =
+            'Average rate: ' + (avgSlope >= 0 ? '+' : '') + avgSlope.toFixed(4)
+            + ' t/ha/yr² (' + direction + ')';
+
+        // chart datasets
+        const histData = histAvg.concat(Array(predYears.length).fill(null));
+        const predData = Array(histYears.length - 1).fill(null)
+            .concat([histAvg[histAvg.length - 1]])
+            .concat(predAvg);
+
+        if (trendChart) trendChart.destroy();
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: allYears,
+                datasets: [
+                    {
+                        label: 'Historical Soil Loss',
+                        data: histData,
+                        borderColor: '#d73027',
+                        backgroundColor: 'rgba(215,48,39,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                    },
+                    {
+                        label: 'Predicted Soil Loss',
+                        data: predData,
+                        borderColor: '#1a9850',
+                        borderDash: [6, 4],
+                        backgroundColor: 'rgba(26,152,80,0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { font: { size: 11 } } }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Mean Soil Loss (t/ha/yr)', font: { size: 11 } }
+                    },
+                    x: { ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+    }
+
+    // ── initial load ──
+    loadYear(2023);
+})();
+</script>
+{% endblock %}

@@ -139,6 +139,27 @@
         font-size: 11px; padding: 6px 10px; background: #e3f2fd;
         border-radius: 6px; margin-bottom: 8px; color: #1565c0;
     }
+
+    /* ── Overlay toggle ── */
+    .overlay-toggle {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 18px; border-bottom: 1px solid #eee;
+        background: #f8f9fa;
+    }
+    .overlay-toggle label { font-size: 12px; color: #333; cursor: pointer; }
+    .switch { position: relative; width: 36px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle {
+        position: absolute; inset: 0; background: #ccc;
+        border-radius: 20px; cursor: pointer; transition: 0.3s;
+    }
+    .slider-toggle::before {
+        content: ''; position: absolute; height: 14px; width: 14px;
+        left: 3px; bottom: 3px; background: #fff;
+        border-radius: 50%; transition: 0.3s;
+    }
+    .switch input:checked + .slider-toggle { background: #0571b0; }
+    .switch input:checked + .slider-toggle::before { transform: translateX(16px); }
 </style>
 {% endblock %}
 
@@ -165,6 +186,15 @@
                     <span style="font-size:11px;color:#888;">2024</span>
                     <span class="year-badge" id="yearLabel">2023</span>
                 </div>
+            </div>
+
+            <!-- Overlay toggle -->
+            <div class="overlay-toggle">
+                <label class="switch">
+                    <input type="checkbox" id="overlayToggle">
+                    <span class="slider-toggle"></span>
+                </label>
+                <label for="overlayToggle">Show LST Heat Map Overlay</label>
             </div>
 
             <!-- Summary -->
@@ -230,6 +260,7 @@
     legend.addTo(map);
 
     let markers = [];
+    let lstLayer = null;
     let barChart = null;
     let trendChart = null;
 
@@ -249,7 +280,7 @@
             const res = await fetch('/api/lst-data/?year=' + year);
             const data = await res.json();
             if (data.error) { alert(data.error); return; }
-            renderSites(data.sites, year);
+            renderSites(data.sites, year, data.tile_url);
         } catch (e) {
             alert('Failed to load data: ' + e.message);
         } finally {
@@ -258,10 +289,19 @@
     }
 
     // ── render sites on map + panel + chart ──
-    function renderSites(sites, year) {
-        // clear old markers
+    function renderSites(sites, year, tileUrl) {
+        // clear old markers & LST overlay
         markers.forEach(m => map.removeLayer(m));
         markers = [];
+        if (lstLayer) { map.removeLayer(lstLayer); lstLayer = null; }
+
+        // add LST raster overlay for this year (if toggle is on)
+        if (tileUrl) {
+            lstLayer = L.tileLayer(tileUrl, { opacity: 0.6, maxZoom: 20 });
+            if (document.getElementById('overlayToggle').checked) {
+                lstLayer.addTo(map);
+            }
+        }
 
         // counts
         const counts = { Healthy: 0, Stressed: 0, Critical: 0, Severe: 0 };
@@ -359,6 +399,16 @@
     });
     slider.addEventListener('change', function() {
         loadYear(parseInt(this.value));
+    });
+
+    // ── overlay toggle ──
+    document.getElementById('overlayToggle').addEventListener('change', function() {
+        if (!lstLayer) return;
+        if (this.checked) {
+            lstLayer.addTo(map);
+        } else {
+            map.removeLayer(lstLayer);
+        }
     });
 
     // ── predictions ──

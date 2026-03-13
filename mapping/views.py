@@ -1,4 +1,5 @@
 import json
+import os
 
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
@@ -267,6 +268,15 @@ def wetland_lst(request):
 
         mean_lst = col.map(_calculate_lst).select('LST').mean()
 
+        # Generate tile URL for the LST raster overlay
+        lst_vis = mean_lst.visualize(
+            min=10, max=30,
+            palette=['#313695', '#4575b4', '#74add1', '#abd9e9',
+                     '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+        )
+        lst_map = lst_vis.getMapId()
+        tile_url = lst_map['tile_fetcher'].url_format
+
         results = mean_lst.reduceRegions(
             collection=sites,
             reducer=ee.Reducer.mean(),
@@ -291,7 +301,7 @@ def wetland_lst(request):
                 'health': _classify_health(temp),
             })
 
-        return JsonResponse({'year': year, 'sites': site_data})
+        return JsonResponse({'year': year, 'sites': site_data, 'tile_url': tile_url})
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -361,6 +371,405 @@ def wetland_lst_predict(request):
             })
 
         return JsonResponse({'sites': response_data})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Soil Erosion helpers ───────────────────────────────────────────
+
+# Wetland names mapped by polygon index (matched by centroid proximity to sample sites)
+WETLAND_NAMES = [
+    'Mantsonyane',                   # 0
+    'Oxbow',                         # 1
+    'Literapeng',                    # 2
+    'Leribe Lefikeng',               # 3
+    'Ha-Moroane',                    # 4
+    'Mathoane Ha-Khohlooa',          # 5
+    'Nazareth Toll-gate',            # 6
+    'Mohlakeng Mokema',              # 7
+    'Mohlakeng Mokema East',         # 8
+    'Mohlakeng Mokema South',        # 9
+    'Mohlakeng Mokema West',         # 10
+    "Mafeteng Tsita's Nek",          # 11
+    "Mohale's Hoek Ha-Makhathe",     # 12
+    "Lets'eng La Letsie",            # 13
+    'Quthing Ha-Rantema',            # 14
+    'Mokopung ha-Lepekola',          # 15
+    'Semonkong',                     # 16
+    'Semonkong (Upper)',             # 17
+    "Thaba-Tseka Mats'oana",         # 18
+    'White Hill ha-Sehapi',          # 19
+    "Rama's Gate",                   # 20
+    'Edward Dam',                    # 21
+    'SNP',                           # 22
+]
+
+
+def _load_wetland_geometry():
+    """Load wetland polygon geometry from JSON file."""
+    import ee
+    json_path = os.path.join(os.path.dirname(__file__), 'wetland_polygons.json')
+    with open(json_path, 'r', encoding='utf-8') as f:
+        geojson = json.load(f)
+    return ee.Geometry(geojson)
+
+
+def _get_wetland_polygon_fc():
+    """Build an EE FeatureCollection of individual wetland polygons."""
+    import ee
+    geom = _load_wetland_geometry()
+    return ee.FeatureCollection(
+        geom.geometries().map(lambda g: ee.Feature(ee.Geometry(g)))
+    )
+
+
+def _calculate_bsi(image):
+    """Calculate BSI for a Sentinel-2 image (server-side)."""
+    import ee
+    bsi = image.expression(
+        '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))',
+        {
+            'B11': image.select('B11'),
+            'B4':  image.select('B4'),
+            'B8':  image.select('B8'),
+            'B2':  image.select('B2'),
+        }
+    ).rename('BSI')
+    return image.addBands(bsi)
+
+
+def _calculate_ndvi(image):
+    """Calculate NDVI for a Sentinel-2 image (server-side)."""
+    import ee
+    return image.addBands(image.normalizedDifference(['B8', 'B4']).rename('NDVI'))
+
+
+def _get_rusle_factors():
+    """Return static RUSLE factor images: K, LS, P."""
+    import ee
+    import math
+
+    dem = ee.Image('USGS/SRTMGL1_003')
+    slope_deg = ee.Terrain.slope(dem)
+    slope_pct = slope_deg.tan().multiply(100)
+
+    # LS-factor (Wischmeier & Smith 1978, cell-based)
+    m_exp = ee.Image(0.2) \
+        .where(slope_pct.gte(1).And(slope_pct.lt(3)), 0.2) \
+        .where(slope_pct.gte(3).And(slope_pct.lt(5)), 0.3) \
+        .where(slope_pct.gte(5), 0.5)
+    slope_length_factor = ee.Image(30).divide(22.13).pow(m_exp)
+    slope_steepness = ee.Image(0.065) \
+        .add(slope_pct.multiply(0.045)) \
+        .add(slope_pct.pow(2).multiply(0.0065))
+    LS = slope_length_factor.multiply(slope_steepness).rename('LS')
+
+    # K-factor from OpenLandMap soil texture class
+    soil_texture = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02').select('b0')
+    K = ee.Image(0.032) \
+        .where(soil_texture.eq(1),  0.022) \
+        .where(soil_texture.eq(2),  0.025) \
+        .where(soil_texture.eq(3),  0.032) \
+        .where(soil_texture.eq(4),  0.035) \
+        .where(soil_texture.eq(5),  0.038) \
+        .where(soil_texture.eq(6),  0.030) \
+        .where(soil_texture.eq(7),  0.040) \
+        .where(soil_texture.eq(8),  0.042) \
+        .where(soil_texture.eq(9),  0.028) \
+        .where(soil_texture.eq(10), 0.045) \
+        .where(soil_texture.eq(11), 0.020) \
+        .where(soil_texture.eq(12), 0.013) \
+        .rename('K')
+
+    P = ee.Image(1).rename('P')
+
+    return K, LS, P, slope_deg
+
+
+def _get_r_factor(year, geom):
+    """Calculate R-factor (Rainfall Erosivity) from CHIRPS for a year."""
+    import ee
+    start = ee.Date.fromYMD(year, 1, 1)
+    end = ee.Date.fromYMD(year, 12, 31)
+    chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY') \
+        .filterDate(start, end) \
+        .filterBounds(geom)
+    annual_p = chirps.sum().rename('annual_P')
+
+    months = ee.List.sequence(1, 12)
+    monthly_sq_sum = ee.ImageCollection(months.map(lambda m: (
+        chirps.filterDate(
+            ee.Date.fromYMD(year, ee.Number(m), 1),
+            ee.Date.fromYMD(year, ee.Number(m), 1).advance(1, 'month')
+        ).sum().rename('monthly_P').pow(2)
+    ))).sum()
+
+    R = monthly_sq_sum.divide(annual_p.max(1)).multiply(1.735).rename('R').clip(geom)
+    return R
+
+
+def _get_c_factor(ndvi):
+    """Calculate C-factor from NDVI (Van der Knijff et al. 2000)."""
+    import ee
+    ndvi_clamped = ndvi.max(0).min(0.99)
+    C = ndvi_clamped.multiply(2.0).divide(ee.Image(1.0).subtract(ndvi_clamped)) \
+        .multiply(-1).exp() \
+        .min(1).max(0) \
+        .rename('C')
+    return C
+
+
+def _get_erosion_for_year(year):
+    """Compute RUSLE soil loss (A = R x K x LS x C x P) for a given year."""
+    import ee
+    geom = _load_wetland_geometry()
+    start = ee.Date.fromYMD(year, 1, 1)
+    end = ee.Date.fromYMD(year, 12, 31)
+
+    col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+        .filterDate(start, end) \
+        .filterBounds(geom) \
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+
+    ndvi = col.map(_calculate_ndvi).select('NDVI').mean().clip(geom)
+
+    K, LS, P, slope_deg = _get_rusle_factors()
+    R = _get_r_factor(year, geom)
+    C = _get_c_factor(ndvi)
+
+    soil_loss = R.multiply(K.clip(geom)) \
+        .multiply(LS.clip(geom)) \
+        .multiply(C) \
+        .multiply(P.clip(geom)) \
+        .rename('soil_loss')
+
+    return soil_loss
+
+
+def _classify_erosion(mean_soil_loss):
+    """Classify mean soil loss (t/ha/yr) into a label."""
+    if mean_soil_loss is None:
+        return 'No Data'
+    if mean_soil_loss >= 30:
+        return 'Very High'
+    if mean_soil_loss >= 15:
+        return 'High'
+    if mean_soil_loss >= 5:
+        return 'Moderate'
+    return 'Low'
+
+
+# ── Erosion views ──────────────────────────────────────────────────
+
+def erosion_view(request):
+    """Render the soil erosion monitoring page."""
+    return render(request, 'mapping/erosion_monitor.html', {'active_page': 'erosion'})
+
+
+def wetland_erosion(request):
+    """Return per-polygon RUSLE soil loss for a given year + tile URL."""
+    import ee
+    initialize_ee()
+
+    year = request.GET.get('year', '2023')
+    try:
+        year = int(year)
+        if year < 2017 or year > 2024:
+            return JsonResponse({'error': 'Year must be between 2017 and 2024'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    try:
+        soil_loss = _get_erosion_for_year(year)
+        polygons = _get_wetland_polygon_fc()
+
+        # Tile URL for soil loss raster
+        sl_vis = soil_loss.visualize(
+            min=0, max=40,
+            palette=['#1a9850', '#91cf60', '#fee08b', '#fc8d59', '#d73027', '#7f0000']
+        )
+        sl_map = sl_vis.getMapId()
+        tile_url = sl_map['tile_fetcher'].url_format
+
+        # Per-polygon stats
+        stats = soil_loss.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=10,
+            tileScale=4,
+        )
+
+        data = stats.getInfo()
+
+        polygon_data = []
+        for i, feature in enumerate(data['features']):
+            props = feature['properties']
+            mean_sl = props.get('mean')
+            if mean_sl is not None:
+                mean_sl = round(mean_sl, 2)
+
+            coords = feature['geometry']['coordinates'][0]
+            lngs = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            centroid_lng = sum(lngs) / len(lngs)
+            centroid_lat = sum(lats) / len(lats)
+
+            polygon_data.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'mean_soil_loss': mean_sl,
+                'status': _classify_erosion(mean_sl),
+                'centroid_lat': round(centroid_lat, 6),
+                'centroid_lng': round(centroid_lng, 6),
+                'coordinates': coords,
+            })
+
+        return JsonResponse({
+            'year': year,
+            'tile_url': tile_url,
+            'polygons': polygon_data,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def wetland_erosion_compare(request):
+    """Compare RUSLE soil loss between two years."""
+    import ee
+    initialize_ee()
+
+    year_a = request.GET.get('year_a', '2018')
+    year_b = request.GET.get('year_b', '2023')
+    try:
+        year_a = int(year_a)
+        year_b = int(year_b)
+        for y in (year_a, year_b):
+            if y < 2017 or y > 2024:
+                return JsonResponse({'error': 'Years must be between 2017 and 2024'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    try:
+        sl_a = _get_erosion_for_year(year_a)
+        sl_b = _get_erosion_for_year(year_b)
+        polygons = _get_wetland_polygon_fc()
+
+        diff = sl_b.subtract(sl_a).rename('soil_loss_change')
+
+        diff_vis = diff.visualize(
+            min=-20, max=20,
+            palette=['#1a9850', '#91cf60', '#ffffbf', '#fc8d59', '#d73027']
+        )
+        diff_map = diff_vis.getMapId()
+        tile_url = diff_map['tile_fetcher'].url_format
+
+        stats = diff.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=10,
+            tileScale=4,
+        )
+        data = stats.getInfo()
+
+        changes = []
+        for i, feature in enumerate(data['features']):
+            mean_change = feature['properties'].get('mean')
+            if mean_change is not None:
+                mean_change = round(mean_change, 2)
+            direction = 'stable'
+            if mean_change is not None:
+                if mean_change > 1:
+                    direction = 'worsening'
+                elif mean_change < -1:
+                    direction = 'improving'
+            changes.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'mean_change': mean_change,
+                'direction': direction,
+            })
+
+        return JsonResponse({
+            'year_a': year_a,
+            'year_b': year_b,
+            'tile_url': tile_url,
+            'changes': changes,
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def wetland_erosion_predict(request):
+    """Return RUSLE soil loss trend (2017-2024) + predictions (2025-2030) per polygon."""
+    import ee
+    initialize_ee()
+
+    try:
+        geom = _load_wetland_geometry()
+        polygons = _get_wetland_polygon_fc()
+        years = list(range(2017, 2025))
+
+        # Build annual soil loss images + linear fit
+        stacked = None
+        annual_images = []
+        for yr in years:
+            sl = _get_erosion_for_year(yr)
+            renamed = sl.rename('SL_{}'.format(yr))
+            stacked = renamed if stacked is None else stacked.addBands(renamed)
+            time_band = ee.Image.constant(yr).float().rename('year')
+            annual_images.append(sl.addBands(time_band).set('year', yr))
+
+        # Linear fit: soil_loss = offset + scale * year
+        annual_col = ee.ImageCollection(annual_images)
+        trend = annual_col.select(['year', 'soil_loss']).reduce(ee.Reducer.linearFit())
+        stacked = stacked.addBands(trend)
+
+        # Single server call
+        results = stacked.reduceRegions(
+            collection=polygons,
+            reducer=ee.Reducer.mean(),
+            scale=30,
+            tileScale=4,
+        )
+        data = results.getInfo()
+
+        polygon_data = []
+        for i, feature in enumerate(data['features']):
+            props = feature['properties']
+            historical = {}
+            for yr in years:
+                val = props.get('SL_{}'.format(yr))
+                historical[str(yr)] = round(val, 2) if val is not None else None
+
+            slope = props.get('scale')
+            intercept = props.get('offset')
+            predictions = {}
+            if slope is not None and intercept is not None:
+                for yr in range(2025, 2031):
+                    predicted = max(0, intercept + slope * yr)
+                    predictions[str(yr)] = round(predicted, 2)
+                slope = round(slope, 4)
+
+            coords = feature['geometry']['coordinates'][0]
+            lngs = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            centroid_lng = sum(lngs) / len(lngs)
+            centroid_lat = sum(lats) / len(lats)
+
+            polygon_data.append({
+                'index': i,
+                'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else 'Wetland ' + str(i),
+                'centroid_lat': round(centroid_lat, 6),
+                'centroid_lng': round(centroid_lng, 6),
+                'historical': historical,
+                'slope': slope,
+                'predictions': predictions,
+            })
+
+        return JsonResponse({'polygons': polygon_data})
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
