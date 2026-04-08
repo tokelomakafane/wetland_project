@@ -1,0 +1,403 @@
+﻿{% extends "mapping/base.html" %}
+
+{% block title %}Map New Wetland{% endblock %}
+{% block page_title %}Map New Wetland{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── Layout ── */
+    .add-page { display: flex; flex-direction: column; height: 100%; }
+    .add-top { display: flex; flex: 1; min-height: 0; }
+    .add-map { flex: 1; position: relative; min-height: 0; }
+    .add-panel {
+        width: 380px; background: #fff; border-left: 1px solid #e0e0e0;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Map Controls ── */
+    .map-controls {
+        position: absolute; top: 12px; left: 12px; z-index: 400;
+        display: flex; gap: 6px; flex-direction: column;
+    }
+    .map-btn {
+        padding: 8px 12px; background: #fff; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 12px; font-weight: 600;
+        cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        transition: 0.2s;
+    }
+    .map-btn:hover { background: #f8f9fa; }
+    .map-btn.active { background: #d73027; color: #fff; border-color: #d73027; }
+    .map-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Panel Header ── */
+    .panel-header {
+        padding: 12px 18px; background: #f8f9fa;
+        border-bottom: 1px solid #eee;
+    }
+    .panel-header h3 { margin: 0; font-size: 16px; font-weight: 600; color: #333; }
+    .panel-header p { margin: 4px 0 0; font-size: 11px; color: #666; }
+
+    /* ── Form inputs ── */
+    .panel-body {
+        flex: 1; overflow-y: auto; padding: 14px 18px;
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-group label {
+        display: block; font-size: 12px; font-weight: 600;
+        color: #333; margin-bottom: 4px;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        width: 100%; padding: 6px 10px; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 12px; font-family: inherit;
+        box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+        border-color: #d73027; outline: none; box-shadow: 0 0 0 2px rgba(215, 48, 39, 0.1);
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+    .form-text { font-size: 11px; color: #888; margin-top: 3px; }
+    .form-error { color: #c62828; font-size: 11px; margin-top: 3px; }
+
+    /* ── Status badges ── */
+    .status-box {
+        padding: 8px 12px; border-radius: 6px; font-size: 12px;
+        margin-bottom: 12px; display: none;
+    }
+    .status-info { background: #e3f2fd; color: #0d47a1; }
+    .status-error { background: #ffebee; color: #c62828; }
+    .status-success { background: #e8f5e9; color: #1b5e20; }
+
+    /* ── Action buttons ── */
+    .action-buttons {
+        padding: 12px 18px; background: #fff; border-top: 1px solid #eee;
+        display: flex; gap: 6px;
+    }
+    .submit-btn {
+        flex: 1; padding: 10px; background: #d73027; color: #fff;
+        border: none; border-radius: 6px; font-size: 12px; font-weight: 600;
+        cursor: pointer; transition: 0.2s;
+    }
+    .submit-btn:hover { background: #b71c1c; }
+    .submit-btn:disabled { background: #b0bec5; cursor: default; }
+    .cancel-btn {
+        flex: 1; padding: 10px; background: #fafafa; color: #333;
+        border: 1px solid #ddd; border-radius: 6px; font-size: 12px;
+        font-weight: 600; cursor: pointer; text-decoration: none; text-align: center;
+        box-sizing: border-box;
+    }
+    .cancel-btn:hover { background: #f0f0f0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="add-page">
+    <div class="add-top">
+        <!-- MAP -->
+        <div class="add-map">
+            <div id="map" style="width:100%;height:100%;"></div>
+            
+            <!-- Draw Controls -->
+            <div class="map-controls">
+                <button id="drawPolygonBtn" class="map-btn active" title="Start drawing polygon">
+                    <i class="fas fa-pen"></i> Draw Polygon
+                </button>
+                <button id="finishPolygonBtn" class="map-btn" style="display: none;" title="Finish polygon">
+                    <i class="fas fa-check"></i> Finish
+                </button>
+                <button id="resetMapBtn" class="map-btn" style="display: none;" title="Clear drawing">
+                    <i class="fas fa-redo"></i> Reset
+                </button>
+            </div>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="add-panel">
+            <!-- Header -->
+            <div class="panel-header">
+                <h3>Wetland Details</h3>
+                <p><i class="fas fa-info-circle"></i> Draw polygon first, then fill form</p>
+            </div>
+
+            <!-- Status Messages -->
+            <div style="padding: 0 18px; padding-top: 12px;">
+                <div id="statusBox" class="status-box"></div>
+            </div>
+
+            <!-- Form -->
+            <form id="wetlandForm" class="panel-body" novalidate>
+                {% csrf_token %}
+
+                <!-- Hidden geometry -->
+                <input type="hidden" id="geojsonGeometry" name="geojson_geometry" value="">
+
+                <!-- Polygon Info -->
+                <div id="polygonInfo" class="status-box status-info">
+                    <strong><i class="fas fa-check-circle"></i> Polygon drawn!</strong>
+                    <div id="areaInfo" style="margin-top: 4px; font-size: 11px;"></div>
+                </div>
+
+                <!-- Name -->
+                <div class="form-group">
+                    <label for="id_name">Wetland Name <span style="color:#c62828;">*</span></label>
+                    {{ form.name }}
+                    <small class="form-text">e.g., "Straw New Wetland"</small>
+                    {% if form.name.errors %}
+                        <div class="form-error">{{ form.name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Village -->
+                <div class="form-group">
+                    <label for="id_village">Village / District</label>
+                    {{ form.village }}
+                    <small class="form-text">e.g., "Semonkong"</small>
+                    {% if form.village.errors %}
+                        <div class="form-error">{{ form.village.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Elevation -->
+                <div class="form-group">
+                    <label for="id_elevation_m">Elevation (m)</label>
+                    {{ form.elevation_m }}
+                    <small class="form-text">Meters above sea level</small>
+                    {% if form.elevation_m.errors %}
+                        <div class="form-error">{{ form.elevation_m.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Description -->
+                <div class="form-group">
+                    <label for="id_description">Description</label>
+                    {{ form.description }}
+                    <small class="form-text">Characteristics, vegetation, etc.</small>
+                    {% if form.description.errors %}
+                        <div class="form-error">{{ form.description.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- Your Name -->
+                <div class="form-group">
+                    <label for="id_uploaded_by">Your Name / Team</label>
+                    {{ form.uploaded_by }}
+                    <small class="form-text">Who is mapping this?</small>
+                    {% if form.uploaded_by.errors %}
+                        <div class="form-error">{{ form.uploaded_by.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </form>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button form="wetlandForm" type="submit" class="submit-btn">
+                    <i class="fas fa-save"></i> Save Wetland
+                </button>
+                <a href="{% url 'mapping:wetland_registry' %}" class="cancel-btn">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet Maps -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<script>
+    let map, currentPolygon = null;
+    let isDrawing = false;
+    let drawPoints = [];
+    let draftLine = null;
+    let draftPolygon = null;
+
+    document.addEventListener("DOMContentLoaded", function() {
+        // Initialize map
+        map = L.map("map").setView([-29.6, 28.2], 7);
+        
+        L.tileLayer("https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", {
+            attribution: "&copy; Google",
+            maxZoom: 20
+        }).addTo(map);
+
+        // Map click for drawing
+        map.on("click", onMapClick);
+        map.on("dblclick", function(e) {
+            if (isDrawing) {
+                L.DomEvent.stop(e);
+                finishDrawing();
+            }
+        });
+
+        // Button handlers
+        document.getElementById("drawPolygonBtn").addEventListener("click", startDraw);
+        document.getElementById("finishPolygonBtn").addEventListener("click", finishDrawing);
+        document.getElementById("resetMapBtn").addEventListener("click", resetMap);
+
+        // Form submission
+        document.getElementById("wetlandForm").addEventListener("submit", handleFormSubmit);
+    });
+
+    function startDraw() {
+        clearDraftLayers();
+        drawPoints = [];
+        isDrawing = true;
+        map.dragging.disable();
+        map.doubleClickZoom.disable();
+        
+        document.getElementById("drawPolygonBtn").style.display = "none";
+        document.getElementById("finishPolygonBtn").style.display = "inline-block";
+        document.getElementById("resetMapBtn").style.display = "inline-block";
+        document.getElementById("statusBox").style.display = "none";
+    }
+
+    function resetMap() {
+        if (currentPolygon) map.removeLayer(currentPolygon);
+        currentPolygon = null;
+        clearDraftLayers();
+        drawPoints = [];
+        isDrawing = false;
+        map.dragging.enable();
+        map.doubleClickZoom.enable();
+        
+        document.getElementById("polygonInfo").style.display = "none";
+        document.getElementById("statusBox").style.display = "none";
+        document.getElementById("geojsonGeometry").value = "";
+        
+        document.getElementById("drawPolygonBtn").style.display = "inline-block";
+        document.getElementById("finishPolygonBtn").style.display = "none";
+        document.getElementById("resetMapBtn").style.display = "none";
+    }
+
+    function onMapClick(e) {
+        if (!isDrawing) return;
+        drawPoints.push(e.latlng);
+        redrawDraft();
+    }
+
+    function redrawDraft() {
+        clearDraftLayers();
+
+        if (drawPoints.length >= 2) {
+            draftLine = L.polyline(drawPoints, {
+                color: "#d73027",
+                weight: 2,
+                dashArray: "6,4",
+                opacity: 0.7
+            }).addTo(map);
+        }
+
+        if (drawPoints.length >= 3) {
+            draftPolygon = L.polygon(drawPoints, {
+                color: "#d73027",
+                fillColor: "#d73027",
+                fillOpacity: 0.15,
+                weight: 2
+            }).addTo(map);
+        }
+    }
+
+    function finishDrawing() {
+        if (!isDrawing || drawPoints.length < 3) {
+            showStatus("error", "Need at least 3 points. Keep clicking to draw.");
+            return;
+        }
+
+        if (currentPolygon) map.removeLayer(currentPolygon);
+
+        currentPolygon = L.polygon(drawPoints, {
+            color: "#1a9641",
+            fillColor: "#1a9641",
+            fillOpacity: 0.3,
+            weight: 2
+        }).addTo(map);
+
+        // Save geometry
+        const coords = drawPoints.map(p => [p.lng, p.lat]);
+        coords.push(coords[0]); // Close polygon
+        const geometry = { type: "Polygon", coordinates: [coords] };
+        document.getElementById("geojsonGeometry").value = JSON.stringify(geometry);
+
+        // Calculate area
+        const area = calculateProjectedAreaM2(drawPoints);
+        const areaHa = (area / 10000).toFixed(2);
+        document.getElementById("areaInfo").innerHTML = "📍 Area: <strong>" + areaHa + " hectares</strong>";
+        document.getElementById("polygonInfo").style.display = "block";
+
+        // Finish drawing
+        isDrawing = false;
+        map.dragging.enable();
+        map.doubleClickZoom.enable();
+        clearDraftLayers();
+        
+        document.getElementById("drawPolygonBtn").style.display = "inline-block";
+        document.getElementById("finishPolygonBtn").style.display = "none";
+        document.getElementById("resetMapBtn").style.display = "inline-block";
+    }
+
+    function clearDraftLayers() {
+        if (draftLine) { map.removeLayer(draftLine); draftLine = null; }
+        if (draftPolygon) { map.removeLayer(draftPolygon); draftPolygon = null; }
+    }
+
+    function showStatus(type, message) {
+        const box = document.getElementById("statusBox");
+        box.className = "status-box status-" + type;
+        const icon = type === "error" ? "exclamation-circle" : "check-circle";
+        box.innerHTML = "<i class=\"fas fa-" + icon + "\"></i> " + message;
+        box.style.display = "block";
+        setTimeout(() => box.style.display = "none", 4000);
+    }
+
+    function calculateProjectedAreaM2(latlngs) {
+        const R = 6371000; // Earth radius in meters
+        const toRad = Math.PI / 180;
+        let area = 0;
+        const n = latlngs.length;
+        for (let i = 0; i < n; i++) {
+            const p1 = latlngs[i];
+            const p2 = latlngs[(i + 1) % n];
+            const x1 = p1.lng * toRad * Math.cos(p1.lat * toRad);
+            const y1 = p1.lat * toRad;
+            const x2 = p2.lng * toRad * Math.cos(p2.lat * toRad);
+            const y2 = p2.lat * toRad;
+            area += (x2 - x1) * (y2 + y1);
+        }
+        return Math.abs(area * R * R / 2);
+    }
+
+    function handleFormSubmit(e) {
+        e.preventDefault();
+        
+        if (!document.getElementById("geojsonGeometry").value) {
+            showStatus("error", "Please draw a polygon first");
+            return;
+        }
+
+        const formData = new FormData(document.getElementById("wetlandForm"));
+        
+        fetch("{% url 'mapping:add_wetland' %}", {
+            method: "POST",
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showStatus("success", "Wetland saved! Redirecting...");
+                setTimeout(() => window.location.href = data.redirect_url || "{% url 'mapping:wetland_registry' %}", 1500);
+            } else {
+                const errors = data.errors ? Object.values(data.errors).flat().join(", ") : "An error occurred";
+                showStatus("error", errors);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            showStatus("error", "Network error. Please try again.");
+        });
+    }
+</script>
+{% endblock %}

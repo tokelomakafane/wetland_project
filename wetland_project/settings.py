@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 'django.contrib.gis',  # GeoDjango (commented out - using JSON geometry instead)
     'mapping',
 ]
 
@@ -52,10 +53,13 @@ WSGI_APPLICATION = 'wetland_project.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
+        'ENGINE': 'django.db.backends.sqlite3',  # Regular SQLite (not spatialite)
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# GIS Configuration (NOT USED - using JSON geometry for simplicity)
+GIS_ENABLED = False
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Maseru'

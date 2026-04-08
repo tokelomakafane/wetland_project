@@ -1,0 +1,391 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Wetland Registry{% endblock %}
+{% block page_title %}Wetland Registry{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── Layout ── */
+    .registry-page { display: flex; flex-direction: column; height: 100%; }
+    .registry-top { display: flex; flex: 1; min-height: 0; }
+    .registry-map { flex: 1; position: relative; min-height: 0; }
+    .registry-panel {
+        width: 380px; background: #fff; border-left: 1px solid #e0e0e0;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Header controls ── */
+    .header-control {
+        padding: 12px 18px; background: #f8f9fa;
+        border-bottom: 1px solid #eee;
+        display: flex; gap: 8px; align-items: center;
+    }
+    .header-control input, .header-control select {
+        flex: 1; padding: 6px 10px; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 12px;
+    }
+    .header-control button {
+        padding: 6px 12px; background: #d73027; color: #fff;
+        border: none; border-radius: 4px; font-size: 12px; font-weight: 600;
+        cursor: pointer;
+    }
+    .header-control button:hover { background: #b71c1c; }
+
+    /* ── Action buttons ── */
+    .action-buttons {
+        padding: 8px 18px; background: #fff;
+        border-bottom: 1px solid #eee; display: flex; gap: 6px;
+    }
+    .action-btn {
+        flex: 1; padding: 8px 10px; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 11px; font-weight: 600;
+        cursor: pointer; text-align: center; text-decoration: none;
+        color: #333; background: #fafafa; transition: 0.2s;
+    }
+    .action-btn:hover { background: #f0f0f0; color: #333; }
+    .action-btn.primary { background: #d73027; color: #fff; border-color: #d73027; }
+    .action-btn.primary:hover { background: #b71c1c; }
+
+    /* ── Summary badges ── */
+    .summary-row {
+        display: flex; gap: 6px; padding: 10px 18px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .summary-badge {
+        flex: 1; text-align: center; padding: 8px 4px;
+        border-radius: 8px; font-size: 10px; font-weight: 600;
+    }
+    .summary-badge .count {
+        font-size: 18px; font-weight: 700; display: block;
+    }
+    .badge-low      { background: #e8f5e9; color: #1b5e20; }
+    .badge-moderate { background: #fff8e1; color: #f57f17; }
+    .badge-high     { background: #ffebee; color: #c62828; }
+    .badge-static   { background: #e3f2fd; color: #1565c0; }
+
+    /* ── Wetlands list ── */
+    .poly-list {
+        list-style: none; padding: 0; margin: 0;
+        overflow-y: auto; flex: 1;
+    }
+    .poly-item {
+        padding: 10px 18px; border-bottom: 1px solid #f5f5f5;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .poly-item:hover { background: #f8f9fa; }
+    .poly-item.selected { background: #fce4ec; border-left: 3px solid #d73027; padding-left: 15px; }
+    .poly-name { font-size: 13px; font-weight: 600; color: #333; }
+    .poly-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .status-pill {
+        font-size: 9px; font-weight: 700; padding: 3px 8px;
+        border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .pill-low      { background: #c8e6c9; color: #1b5e20; }
+    .pill-moderate { background: #fff9c4; color: #f57f17; }
+    .pill-high     { background: #ffcdd2; color: #b71c1c; }
+    .pill-unknown  { background: #eee;    color: #666; }
+    .pill-static   { background: #bbdefb; color: #0d47a1; }
+
+    /* ── Popup Styling ── */
+    .registry-popup .leaflet-popup-content-wrapper {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border: 1px solid #ddd;
+    }
+    .registry-popup .leaflet-popup-tip {
+        background: #fff;
+        border: 1px solid #ddd;
+    }
+    .registry-popup .leaflet-popup-content {
+        margin: 0;
+        padding: 0;
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="registry-page">
+    <div class="registry-top">
+        <!-- MAP -->
+        <div class="registry-map">
+            <div id="map" style="width:100%;height:100%;"></div>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="registry-panel">
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <a href="{% url 'mapping:add_wetland' %}" class="action-btn primary">
+                    <i class="fas fa-pencil-alt"></i> Draw
+                </a>
+                <a href="{% url 'mapping:upload_wetlands' %}" class="action-btn">
+                    <i class="fas fa-upload"></i> Upload
+                </a>
+            </div>
+
+            <!-- Search/Filter -->
+            <div class="header-control">
+                <input type="text" id="searchInput" placeholder="Search wetlands..." style="flex: 1;">
+                <button type="button" onclick="filterWetlands()"><i class="fas fa-search"></i></button>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="summary-row">
+                <div class="summary-badge badge-low"><span class="count" id="countLow">0</span>Low</div>
+                <div class="summary-badge badge-moderate"><span class="count" id="countMod">0</span>Mod</div>
+                <div class="summary-badge badge-high"><span class="count" id="countHigh">0</span>High</div>
+                <div class="summary-badge badge-static"><span class="count" id="countStatic">0</span>Historic</div>
+            </div>
+
+            <!-- Wetlands List -->
+            <ul class="poly-list" id="polyList"></ul>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet Maps -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<script>
+    // Data from view
+    const geojsonData = {{ geojson | safe }};
+    let map;
+    let drawnItems = L.featureGroup();
+    let featureLayers = {}; // Store references to drawn layers by index
+    let currentPopup = null;
+
+    // Initialize map
+    function initMap() {
+        map = L.map('map').setView([-29.8, 28.0], 7);
+        
+        // Base layer
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google',
+            maxZoom: 20
+        }).addTo(map);
+
+        drawnItems.addTo(map);
+        loadWetlands();
+    }
+
+    // Load and display wetlands
+    function loadWetlands() {
+        if (!geojsonData.features) return;
+
+        // Count by risk level
+        let counts = { low: 0, moderate: 0, high: 0, static: 0 };
+        let polyList = document.getElementById('polyList');
+        polyList.innerHTML = '';
+        featureLayers = {}; // Reset
+
+        geojsonData.features.forEach((feature, idx) => {
+            const props = feature.properties || {};
+            const isStatic = props.is_static === true || props.source === 'historical_static';
+            const riskLevel = props.risk_level || 'unknown';
+            
+            // Count stats
+            if (isStatic) counts.static++;
+            else if (riskLevel === 'high') counts.high++;
+            else if (riskLevel === 'moderate') counts.moderate++;
+            else counts.low++;
+
+            // Draw on map
+            if (feature.geometry) {
+                try {
+                    const geoJsonLayer = L.geoJSON(feature, {
+                        style: {
+                            color: isStatic ? '#1976d2' : (
+                                riskLevel === 'high' ? '#d73027' : 
+                                riskLevel === 'moderate' ? '#ffa500' : 
+                                '#1b5e20'
+                            ),
+                            weight: 2,
+                            opacity: 0.7,
+                            fillOpacity: 0.3
+                        },
+                        onEachFeature: (feat, layer) => {
+                            layer.on('click', () => highlightItem(idx, true));
+                        }
+                    });
+                    geoJsonLayer.addTo(drawnItems);
+                    
+                    // Store reference to layer for zooming later
+                    featureLayers[idx] = geoJsonLayer;
+                } catch(e) {
+                    console.error('Error drawing feature:', e);
+                }
+            }
+
+            // Add to list
+            const li = document.createElement('li');
+            li.className = 'poly-item';
+            li.dataset.index = idx;
+            li.onclick = () => highlightItem(idx, false);
+
+            const name = props.name || `Wetland ${idx}`;
+            const village = props.village || '';
+            const area = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : '';
+
+            li.innerHTML = `
+                <div class="poly-name">${name}</div>
+                <div class="poly-meta">
+                    <span class="status-pill pill-${isStatic ? 'static' : riskLevel.toLowerCase()}">${isStatic ? 'Historic' : riskLevel}</span>
+                    ${village ? `<span style="font-size:10px;color:#666;">${village}</span>` : ''}
+                    ${area ? `<span style="font-size:10px;color:#888;">📍 ${area}</span>` : ''}
+                </div>
+            `;
+            polyList.appendChild(li);
+        });
+
+        // Update counts
+        document.getElementById('countLow').textContent = counts.low;
+        document.getElementById('countMod').textContent = counts.moderate;
+        document.getElementById('countHigh').textContent = counts.high;
+        document.getElementById('countStatic').textContent = counts.static;
+
+        document.getElementById('searchInput').addEventListener('input', filterWetlands);
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                filterWetlands();
+            }
+        });
+
+        // Auto-fit bounds
+        if (drawnItems.getLayers().length > 0) {
+            map.fitBounds(drawnItems.getBounds(), { padding: [50, 50] });
+        }
+    }
+
+    // Highlight item and zoom to it with popup
+    function highlightItem(idx, fromMap) {
+        // Clear previous selection
+        document.querySelectorAll('.poly-item').forEach(el => el.classList.remove('selected'));
+        
+        // Select new
+        const item = document.querySelector(`.poly-item[data-index="${idx}"]`);
+        if (item) item.classList.add('selected');
+
+        // Get feature data
+        const feature = geojsonData.features[idx];
+        if (!feature) return;
+
+        const props = feature.properties || {};
+        const isStatic = props.is_static === true || props.source === 'historical_static';
+        const riskLevel = props.risk_level || 'unknown';
+        const name = props.name || `Wetland ${idx}`;
+        const village = props.village || '';
+        const area = props.area_ha ? props.area_ha.toFixed(2) : 'N/A';
+        const elevation = props.elevation_m ? `${props.elevation_m} m` : 'N/A';
+        const rawDescription = (props.description || '').trim();
+        const description = rawDescription && rawDescription !== 'Historical wetland' ? rawDescription : 'No description';
+        const wetlandId = props.id; // ID from database
+
+        // Close previous popup
+        if (currentPopup) {
+            map.closePopup(currentPopup);
+        }
+
+        // Zoom to feature bounds
+        if (featureLayers[idx]) {
+            const layer = featureLayers[idx];
+            
+            // Get bounds and zoom
+            if (layer.getBounds) {
+                const bounds = layer.getBounds();
+                map.fitBounds(bounds, { padding: [100, 100], maxZoom: 15 });
+            }
+
+            // Create popup content
+            const monitorBtn = wetlandId ? 
+                `<a href="/wetlands/${wetlandId}/monitor/" style="display: inline-block; background: #d73027; color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600; margin-top: 10px; transition: 0.2s;" onmouseover="this.style.background='#b71c1c'" onmouseout="this.style.background='#d73027'"><i class="fas fa-chart-line"></i> Monitor</a>` 
+                : '';
+            
+            const popupContent = `
+                <div style="width: 280px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div style="background: #f8f9fa; padding: 12px; border-bottom: 1px solid #eee; margin: -6px -6px 0 -6px;">
+                        <h4 style="margin: 0; font-size: 14px; color: #333;">${name}</h4>
+                        <span class="status-pill pill-${isStatic ? 'static' : riskLevel.toLowerCase()}" style="display: inline-block; margin-top: 6px;">
+                            ${isStatic ? 'Historic' : riskLevel}
+                        </span>
+                    </div>
+                    <div style="padding: 12px;">
+                        ${village ? `<p style="margin: 0 0 8px 0; font-size: 12px;"><strong>Village:</strong> ${village}</p>` : ''}
+                        <p style="margin: 0 0 8px 0; font-size: 12px;"><strong>Area:</strong> ${area} ha</p>
+                        <p style="margin: 0 0 8px 0; font-size: 12px;"><strong>Elevation:</strong> ${elevation}</p>
+                        <p style="margin: 0; font-size: 12px;"><strong>Description:</strong></p>
+                        <p style="margin: 4px 0 0 0; font-size: 11px; color: #666; line-height: 1.5;">${description}</p>
+                        ${monitorBtn}
+                    </div>
+                </div>
+            `;
+
+            // Find a point to show popup (center of bounds)
+            const bounds = layer.getBounds();
+            const center = bounds.getCenter();
+
+            currentPopup = L.popup({ 
+                maxWidth: 300,
+                className: 'registry-popup'
+            })
+            .setLatLng(center)
+            .setContent(popupContent)
+            .openOn(map);
+        }
+    }
+
+    // Filter by search
+    function filterWetlands() {
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        const items = Array.from(document.querySelectorAll('.poly-item'));
+        let firstMatch = null;
+
+        items.forEach(item => {
+            const idx = item.dataset.index;
+            const feature = geojsonData.features[idx];
+            const props = feature && feature.properties ? feature.properties : {};
+            const text = [
+                props.name,
+                props.village,
+                props.description,
+                props.status,
+                props.risk_level,
+                props.source
+            ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+            const match = query === '' || text.includes(query);
+            item.style.display = match ? '' : 'none';
+
+            const layer = featureLayers[idx];
+            if (layer && layer.eachLayer) {
+                layer.eachLayer(function(subLayer) {
+                    if (subLayer.setStyle) {
+                        subLayer.setStyle({ opacity: match ? 0.7 : 0.12, fillOpacity: match ? 0.3 : 0.06 });
+                    }
+                });
+            }
+
+            if (match && !firstMatch) {
+                firstMatch = item;
+            }
+        });
+
+        if (firstMatch) {
+            const idx = firstMatch.dataset.index;
+            const layer = featureLayers[idx];
+            if (layer && layer.getBounds) {
+                map.fitBounds(layer.getBounds(), { padding: [80, 80], maxZoom: 15 });
+            }
+        }
+    }
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', initMap);
+</script>
+{% endblock %}
