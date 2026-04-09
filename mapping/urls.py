@@ -22,4 +22,13 @@ urlpatterns = [
     path('api/erosion-data/', views.wetland_erosion, name='erosion_data'),
     path('api/erosion-compare/', views.wetland_erosion_compare, name='erosion_compare'),
     path('api/erosion-predict/', views.wetland_erosion_predict, name='erosion_predict'),
+    
+    # New Wetland Management Routes
+    path('wetlands/', views.wetland_registry, name='wetland_registry'),
+    path('wetlands/add/', views.add_wetland, name='add_wetland'),
+    path('wetlands/upload/', views.upload_wetlands, name='upload_wetlands'),
+    path('wetlands/<int:pk>/monitor/', views.monitor_wetland, name='monitor_wetland'),
+    path('api/wetlands/<int:pk>/erosion/', views.api_wetland_erosion_data, name='api_wetland_erosion'),
+    path('api/wetlands/compare/', views.api_wetland_comparison, name='api_wetland_compare'),
+    path('api/wetlands/<int:pk>/predict/', views.api_wetland_prediction, name='api_wetland_prediction'),
 ]

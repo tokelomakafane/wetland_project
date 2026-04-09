@@ -1,0 +1,198 @@
+{% extends 'mapping/base.html' %}
+
+{% block title %}Bulk Upload Wetlands{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="fas fa-upload"></i> Bulk Upload Wetlands</h1>
+            <p class="text-muted">Upload multiple wetlands from GeoJSON or other formats</p>
+        </div>
+        <div class="col-md-4">
+            <a href="{% url 'mapping:wetland_registry' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Registry
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">File Upload</h5>
+                </div>
+                <div class="card-body">
+                    <form id="uploadForm" method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="form-group">
+                            <label>File Format</label>
+                            <div class="custom-control custom-radio">
+                                <input type="radio" class="custom-control-input" id="geojson" name="file_format" value="geojson" checked>
+                                <label class="custom-control-label" for="geojson">
+                                    GeoJSON (.geojson or .json)
+                                </label>
+                            </div>
+                            <div class="custom-control custom-radio">
+                                <input type="radio" class="custom-control-input" id="shapefile" name="file_format" value="shapefile" disabled>
+                                <label class="custom-control-label" for="shapefile">
+                                    Shapefile (.shp) - Coming soon
+                                </label>
+                            </div>
+                            <div class="custom-control custom-radio">
+                                <input type="radio" class="custom-control-input" id="kml" name="file_format" value="kml" disabled>
+                                <label class="custom-control-label" for="kml">
+                                    KML (.kml) - Coming soon
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="id_file">Select File *</label>
+                            <input type="file" class="form-control" id="id_file" name="file" 
+                                   accept=".geojson,.json,.shp,.kml" required>
+                            <small class="form-text text-muted">
+                                Maximum file size: 10 MB
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="id_source">Source / Data Type *</label>
+                            <select class="form-control" id="id_source" name="source" required>
+                                <option value="">-- Select --</option>
+                                <option value="geojson_upload">GeoJSON Upload</option>
+                                <option value="shapefile_upload">Shapefile Upload</option>
+                                <option value="drone_survey">Drone Survey</option>
+                                <option value="historical_static">Historical Static Data</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="id_uploaded_by">Uploaded By *</label>
+                            <input type="text" class="form-control" id="id_uploaded_by" name="uploaded_by" 
+                                   placeholder="Your name or team name" required>
+                        </div>
+
+                        <div class="custom-control custom-checkbox">
+                            <input type="checkbox" class="custom-control-input" id="id_overwrite" name="overwrite_existing">
+                            <label class="custom-control-label" for="id_overwrite">
+                                Overwrite existing wetlands with same names
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block mt-4">
+                            <i class="fas fa-cloud-upload-alt"></i> Upload & Process
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Sample GeoJSON -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">GeoJSON Format Example</h5>
+                </div>
+                <div class="card-body">
+                    <pre><code>{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Straw New Wetland",
+        "village": "Some Village",
+        "description": "Wetland description"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [28.1, -29.1],
+          [28.2, -29.1],
+          [28.2, -29.2],
+          [28.1, -29.2],
+          [28.1, -29.1]
+        ]]
+      }
+    }
+  ]
+}</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Upload Status</h5>
+                </div>
+                <div class="card-body">
+                    <div id="statusMessage" style="display: none;">
+                        <div id="messageContent"></div>
+                    </div>
+                    <div id="defaultMessage" class="text-muted text-center" style="padding: 40px 20px;">
+                        <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+                        <p>Files will be processed here</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const statusDiv = document.getElementById('statusMessage');
+    const messageContent = document.getElementById('messageContent');
+    const defaultMsg = document.getElementById('defaultMessage');
+    
+    try {
+        const response = await fetch('{% url "mapping:upload_wetlands" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        });
+        
+        const data = await response.json();
+        
+        defaultMsg.style.display = 'none';
+        
+        let html = '';
+        if (data.success) {
+            html = `
+                <div class="alert alert-success">
+                    <h6><i class="fas fa-check-circle"></i> Upload Successful</h6>
+                    <p class="mb-0"><strong>Created:</strong> ${data.created} wetlands</p>
+                    ${data.updated > 0 ? `<p class="mb-0"><strong>Updated:</strong> ${data.updated} wetlands</p>` : ''}
+                </div>
+            `;
+        } else {
+            html = `<div class="alert alert-danger">${data.error}</div>`;
+        }
+        
+        if (data.errors && data.errors.length > 0) {
+            html += '<div class="alert alert-warning"><strong>Warnings:</strong><ul>';
+            data.errors.forEach(err => {
+                html += `<li>${err}</li>`;
+            });
+            html += '</ul></div>';
+        }
+        
+        messageContent.innerHTML = html;
+        statusDiv.style.display = 'block';
+        
+    } catch (error) {
+        defaultMsg.style.display = 'none';
+        messageContent.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        statusDiv.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

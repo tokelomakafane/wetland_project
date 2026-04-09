@@ -1,0 +1,630 @@
+{% extends 'mapping/base.html' %}
+
+{% block title %}Monitor Wetland - {{ wetland.name }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── Layout ── */
+    .monitor-page { display: flex; flex-direction: column; height: 100%; }
+    .monitor-header {
+        padding: 16px 24px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .monitor-header h1 { margin: 0; font-size: 24px; font-weight: 700; color: #333; }
+    .monitor-header p { margin: 4px 0 0 0; font-size: 12px; color: #666; }
+    
+    .monitor-badges {
+        display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;
+    }
+    .monitor-badge {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 600;
+        background: #e8f5e9; color: #1b5e20;
+    }
+    .monitor-badge.high { background: #ffebee; color: #c62828; }
+    .monitor-badge.moderate { background: #fff8e1; color: #f57f17; }
+    .monitor-badge.blue { background: #e3f2fd; color: #0d47a1; }
+    .monitor-badge.gray { background: #eeeeee; color: #424242; }
+
+    .monitor-top { display: flex; flex: 1; min-height: 0; }
+    .monitor-map { flex: 1; position: relative; min-height: 0; }
+    .monitor-panel {
+        width: 420px; background: #fff; border-left: 1px solid #e0e0e0;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Panel sections ── */
+    .panel-section {
+        padding: 14px 18px; border-bottom: 1px solid #f0f0f0;
+    }
+    .panel-section h3 {
+        margin: 0 0 10px 0; font-size: 13px; font-weight: 700;
+        color: #333; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+
+    .section-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px;
+    }
+    .section-header h3 { margin: 0; }
+
+    /* ── Risk indicator ── */
+    .risk-display {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 16px; border-radius: 8px; color: #fff; text-align: center;
+        margin-bottom: 12px;
+    }
+    .risk-display .risk-value {
+        font-size: 32px; font-weight: 700; line-height: 1;
+        margin-bottom: 4px;
+    }
+    .risk-display .risk-label {
+        font-size: 11px; opacity: 0.9;
+    }
+
+    /* ── Data grid ── */
+    .data-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .data-item {
+        background: #f8f9fa; padding: 10px; border-radius: 6px;
+        border-left: 3px solid #d73027;
+    }
+    .data-item.green { border-left-color: #1a9641; }
+    .data-item.blue { border-left-color: #1976d2; }
+    .data-item.orange { border-left-color: #ffa500; }
+    .data-label { font-size: 10px; color: #666; font-weight: 600; margin-bottom: 2px; }
+    .data-value { font-size: 16px; font-weight: 700; color: #333; }
+
+    /* ── Form group ── */
+    .form-group { margin-bottom: 10px; }
+    .form-group label {
+        display: block; font-size: 11px; font-weight: 600; color: #333; margin-bottom: 4px;
+    }
+    .form-group select {
+        width: 100%; padding: 6px 8px; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 12px; box-sizing: border-box;
+    }
+    .form-group select:focus { border-color: #d73027; outline: none; }
+
+    /* ── Buttons ── */
+    .btn-compare {
+        width: 100%; padding: 10px; background: #d73027; color: #fff;
+        border: none; border-radius: 6px; font-size: 12px; font-weight: 600;
+        cursor: pointer; transition: 0.2s;
+    }
+    .btn-compare:hover { background: #b71c1c; }
+
+    .comparison-result {
+        background: #f0f0f0; padding: 10px; border-radius: 6px;
+        margin-top: 10px; display: none;
+    }
+    .comparison-result.show { display: block; }
+    .comparison-result p { margin: 4px 0; font-size: 11px; }
+    .comparison-result strong { color: #333; }
+
+    /* ── Scrollable section ── */
+    .scrollable-section {
+        flex: 1; overflow-y: auto;
+    }
+
+    /* ── History table ── */
+    .history-table {
+        list-style: none; padding: 0; margin: 0;
+    }
+    .history-item {
+        padding: 10px; border-bottom: 1px solid #f0f0f0;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .history-item:hover { background: #f8f9fa; }
+    .history-item.selected { background: #fce4ec; }
+    .history-year { font-size: 12px; font-weight: 700; color: #333; }
+    .history-meta { font-size: 10px; color: #999; margin-top: 3px; }
+
+    /* ── Back button ── */
+    .btn-back {
+        padding: 6px 12px; background: #fafafa; color: #333; border: 1px solid #ddd;
+        border-radius: 4px; font-size: 12px; text-decoration: none; cursor: pointer;
+        transition: 0.2s; display: inline-block;
+        margin-bottom: 10px;
+    }
+    .btn-back:hover { background: #f0f0f0; }
+
+    /* ── Alert box ── */
+    .alert-box {
+        background: #e3f2fd; color: #0d47a1; padding: 10px;
+        border-radius: 6px; font-size: 11px; margin-bottom: 12px;
+    }
+
+    /* ── Wetland soil monitor additions ── */
+    .year-control {
+        padding: 12px 0 14px;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 12px;
+    }
+    .year-control label { font-size: 12px; font-weight: 600; color: #333; }
+    .year-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+    .year-row input[type=range] { flex: 1; }
+    .year-badge {
+        background: #d73027; color: #fff; padding: 4px 12px;
+        border-radius: 16px; font-size: 13px; font-weight: 700;
+        min-width: 60px; text-align: center;
+    }
+
+    .status-card-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .status-card {
+        background: #f8f9fa; border-radius: 6px; padding: 10px;
+        border-left: 3px solid #d73027;
+    }
+    .status-card.green { border-left-color: #1a9641; }
+    .status-card.blue { border-left-color: #1976d2; }
+    .status-card.orange { border-left-color: #f57f17; }
+    .status-card.gray { border-left-color: #757575; }
+    .status-label { font-size: 10px; font-weight: 600; color: #666; margin-bottom: 2px; }
+    .status-value { font-size: 16px; font-weight: 700; color: #333; }
+
+    .chart-section {
+        padding: 14px 18px; border-top: 1px solid #eee;
+    }
+    .chart-section h3 {
+        margin: 0 0 10px 0; font-size: 13px; font-weight: 700;
+        color: #333; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .chart-canvas { width: 100% !important; height: 220px !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- HEADER -->
+<div class="monitor-header">
+    <a href="{% url 'mapping:wetland_registry' %}" class="btn-back"><i class="fas fa-arrow-left"></i> Registry</a>
+    <h1><i class="fas fa-microscope"></i> {{ wetland.name }}</h1>
+    <p><i class="fas fa-map-marker-alt"></i> {{ wetland.village }} • {{ wetland.area_ha }} ha • v{{ wetland.version }}</p>
+    <div class="monitor-badges">
+        <div class="monitor-badge blue"><i class="fas fa-info-circle"></i> {% if wetland.is_static %}Historical{% else %}Active{% endif %}</div>
+        <div class="monitor-badge {% if wetland.risk_level == 'high' %}high{% elif wetland.risk_level == 'moderate' %}moderate{% else %}green{% endif %}">
+            <i class="fas fa-exclamation-circle"></i> {{ wetland.get_risk_level_display }}
+        </div>
+    </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="monitor-page" style="flex: 1; min-height: 0;">
+    <div class="monitor-top">
+        <!-- MAP -->
+        <div class="monitor-map">
+            <div id="map" style="width:100%;height:100%;"></div>
+        </div>
+
+        <!-- SIDE PANEL -->
+        <div class="monitor-panel">
+            <!-- Current Status -->
+            <div class="panel-section">
+                <h3>Wetland Soil Monitor</h3>
+                <div class="year-control">
+                    <label>Year</label>
+                    <div class="year-row">
+                        <span style="font-size:11px;color:#888;">2013</span>
+                        <input type="range" id="yearSlider" min="2013" max="2024" value="{% if latest_record %}{{ latest_record.year }}{% else %}2023{% endif %}" step="1">
+                        <span style="font-size:11px;color:#888;">2024</span>
+                        <span class="year-badge" id="yearLabel">{% if latest_record %}{{ latest_record.year }}{% else %}2023{% endif %}</span>
+                    </div>
+                </div>
+
+                {% if latest_record %}
+                    <div style="background: #fff3e0; border-left: 4px solid #ff6f00; padding: 12px; border-radius: 4px; margin-bottom: 12px;">
+                        <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Soil Loss by Wetland</div>
+                        <div style="font-size: 24px; font-weight: bold; color: #d84315;" id="soilLossValue">-</div>
+                        <div style="font-size: 10px; color: #ff6f00;">t/ha/yr</div>
+                    </div>
+                    
+                    <div class="risk-display">
+                        <div class="risk-value" id="riskValue">{{ latest_record.erosion_risk|default_if_none:"0"|floatformat:2 }}</div>
+                        <div class="risk-label">
+                            <span id="riskClassBadge" class="badge badge-{% if latest_record.risk_class == 'high' %}danger{% elif latest_record.risk_class == 'moderate' %}warning{% else %}success{% endif %}" style="padding: 3px 8px; font-size: 10px;">
+                                {{ latest_record.get_risk_class_display }}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="status-card-grid">
+                        <div class="status-card green">
+                            <div class="status-label">BSI Mean</div>
+                            <div class="status-value" id="bsiValue">{{ latest_record.bsi_mean|default_if_none:"0"|floatformat:3 }}</div>
+                        </div>
+                        <div class="status-card blue">
+                            <div class="status-label">NDVI Mean</div>
+                            <div class="status-value" id="ndviValue">{{ latest_record.ndvi_mean|default_if_none:"0"|floatformat:3 }}</div>
+                        </div>
+                        <div class="status-card orange">
+                            <div class="status-label">Slope Mean</div>
+                            <div class="status-value" id="slopeValue">{{ latest_record.slope_mean|default_if_none:"0"|floatformat:2 }}°</div>
+                        </div>
+                        <div class="status-card gray">
+                            <div class="status-label">Cloud Cover</div>
+                            <div class="status-value" id="cloudValue">{{ latest_record.cloud_cover|default_if_none:"0"|floatformat:0 }}%</div>
+                        </div>
+                    </div>
+                {% else %}
+                    <div style="background: #fff3e0; border-left: 4px solid #ff6f00; padding: 12px; border-radius: 4px; margin-bottom: 12px;">
+                        <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Soil Loss by Wetland</div>
+                        <div style="font-size: 24px; font-weight: bold; color: #d84315;" id="soilLossValue">-</div>
+                        <div style="font-size: 10px; color: #ff6f00;">t/ha/yr</div>
+                    </div>
+
+                    <div class="risk-display">
+                        <div class="risk-value" id="riskValue">0.00</div>
+                        <div class="risk-label">
+                            <span id="riskClassBadge" class="badge badge-secondary" style="padding: 3px 8px; font-size: 10px;">UNKNOWN</span>
+                        </div>
+                    </div>
+
+                    <div class="status-card-grid">
+                        <div class="status-card green">
+                            <div class="status-label">BSI Mean</div>
+                            <div class="status-value" id="bsiValue">N/A</div>
+                        </div>
+                        <div class="status-card blue">
+                            <div class="status-label">NDVI Mean</div>
+                            <div class="status-value" id="ndviValue">N/A</div>
+                        </div>
+                        <div class="status-card orange">
+                            <div class="status-label">Slope Mean</div>
+                            <div class="status-value" id="slopeValue">N/A</div>
+                        </div>
+                        <div class="status-card gray">
+                            <div class="status-label">Cloud Cover</div>
+                            <div class="status-value" id="cloudValue">N/A</div>
+                        </div>
+                    </div>
+
+                    <div class="alert-box" id="monitorHint" style="margin-top: 12px;">
+                        <i class="fas fa-info-circle"></i> No monitoring data yet. Use the year slider to compute the wetland soil monitor.
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Year Comparison -->
+            <div class="panel-section">
+                <h3>Year Comparison</h3>
+                <div class="form-group">
+                    <label>From Year</label>
+                    <select id="yearA">
+                        <option value="2018">2018</option>
+                        <option value="2019">2019</option>
+                        <option value="2020">2020</option>
+                        <option value="2021">2021</option>
+                        <option value="2022">2022</option>
+                        <option value="2023">2023</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>To Year</label>
+                    <select id="yearB">
+                        <option value="2018">2018</option>
+                        <option value="2019">2019</option>
+                        <option value="2020">2020</option>
+                        <option value="2021">2021</option>
+                        <option value="2022">2022</option>
+                        <option value="2023" selected>2023</option>
+                    </select>
+                </div>
+
+                <button class="btn-compare" onclick="compareYears()">
+                    <i class="fas fa-chart-line"></i> Compare
+                </button>
+
+                <div id="comparisonResult" class="comparison-result">
+                    <p><strong>Change: </strong><span id="changeValue">-</span></p>
+                    <p><strong>Direction: </strong><span id="changeDir" style="color: #d73027;">-</span></p>
+                </div>
+            </div>
+
+            <button class="btn-compare" id="predictBtn" style="margin: 0 18px 12px; background:#1a9641;">
+                <i class="fas fa-chart-line"></i> Load Soil Loss Trend &amp; Predictions
+            </button>
+
+            <!-- Trend Chart -->
+            <div class="chart-section">
+                <h3>Soil Loss Trend</h3>
+                <canvas id="trendChart" class="chart-canvas"></canvas>
+            </div>
+
+            <div class="chart-section" id="predictSection" style="display:none; border-top: 1px solid #eee; background:#fff8f6;">
+                <h3 style="color:#d73027;">Soil Loss Trend &amp; Predictions</h3>
+                <div id="rateInfo" style="font-size:11px; padding:6px 10px; background:#fce4ec; border-radius:6px; margin-bottom:8px; color:#b71c1c;"></div>
+                <canvas id="predictChart" class="chart-canvas" style="height:240px !important;"></canvas>
+            </div>
+
+            <!-- History -->
+            <div class="panel-section scrollable-section" style="padding: 0;">
+                <div style="padding: 14px 18px; border-bottom: 1px solid #f0f0f0;">
+                    <h3 style="margin: 0;">Monitoring History</h3>
+                </div>
+                <ul class="history-table">
+                    {% for record in records %}
+                        <li class="history-item" onclick="selectRecord({{ record.id }}, {{ record.year }}, this)">
+                            <div class="history-year">
+                                {{ record.year }} 
+                                <span class="badge badge-{% if record.risk_class == 'high' %}danger{% elif record.risk_class == 'moderate' %}warning{% else %}success{% endif %}" style="padding: 2px 6px; font-size: 9px; margin-left: 6px;">
+                                    {{ record.get_risk_class_display }}
+                                </span>
+                            </div>
+                            <div class="history-meta">{{ record.get_season_display }} • {{ record.monitoring_date|date:"M d, Y" }}</div>
+                        </li>
+                    {% empty %}
+                        <li style="padding: 14px 18px; text-align: center; color: #999; font-size: 11px;">
+                            No records yet
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
+<script>
+    const wetlandId = {{ wetland.id }};
+    const historyData = [
+        {% for record in records %}
+        {
+            year: {{ record.year }},
+            risk: {{ record.erosion_risk|default_if_none:"null" }},
+            bsi: {{ record.bsi_mean|default_if_none:"null" }},
+            ndvi: {{ record.ndvi_mean|default_if_none:"null" }},
+            slope: {{ record.slope_mean|default_if_none:"null" }},
+            cloud: {{ record.cloud_cover|default_if_none:"null" }},
+            label: "{{ record.get_risk_class_display|escapejs }}"
+        },
+        {% endfor %}
+    ];
+
+    let map;
+    let trendChart = null;
+    let predictChart = null;
+    let boundaryLayer = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize map
+        map = L.map('map').setView([-29.6, 28.2], 10);
+        
+        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            attribution: '&copy; Google',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Add wetland boundary
+        const geojson = {{ geojson|safe }};
+        if (geojson) {
+            boundaryLayer = L.geoJSON(geojson, {
+                style: {
+                    color: '#1a9641',
+                    fillColor: '#74c476',
+                    fillOpacity: 0.3,
+                    weight: 2
+                }
+            }).addTo(map);
+            
+            // Fit bounds
+            if (boundaryLayer.getBounds) {
+                map.fitBounds(boundaryLayer.getBounds(), { padding: [50, 50] });
+            }
+        }
+
+        document.getElementById('yearSlider').addEventListener('input', function() {
+            document.getElementById('yearLabel').textContent = this.value;
+        });
+
+        document.getElementById('yearSlider').addEventListener('change', function() {
+            loadWetlandYear(this.value);
+        });
+
+        document.getElementById('predictBtn').addEventListener('click', function() {
+            loadWetlandPrediction();
+        });
+
+        renderTrendChart();
+        loadWetlandYear(document.getElementById('yearSlider').value);
+    });
+
+    function renderTrendChart() {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: historyData.map(item => item.year),
+                datasets: [{
+                    label: 'Erosion Risk',
+                    data: historyData.map(item => item.risk),
+                    borderColor: '#d73027',
+                    backgroundColor: 'rgba(215, 48, 39, 0.15)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#d73027'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, suggestedMax: 2, title: { display: true, text: 'Risk Index' } },
+                    x: { title: { display: true, text: 'Year' } }
+                }
+            }
+        });
+    }
+
+    function setCurrentData(data) {
+        document.getElementById('soilLossValue').textContent = data.soil_loss_t_ha_yr !== undefined ? Number(data.soil_loss_t_ha_yr).toFixed(2) : '-';
+        document.getElementById('riskValue').textContent = Number(data.erosion_risk || 0).toFixed(2);
+        const badge = document.getElementById('riskClassBadge');
+        const riskClass = (data.risk_class || 'unknown').toLowerCase();
+        badge.textContent = riskClass.toUpperCase();
+        badge.className = 'badge badge-' + (riskClass === 'high' ? 'danger' : riskClass === 'moderate' ? 'warning' : 'success');
+        document.getElementById('bsiValue').textContent = data.bsi_mean !== null ? Number(data.bsi_mean).toFixed(3) : 'N/A';
+        document.getElementById('ndviValue').textContent = data.ndvi_mean !== null ? Number(data.ndvi_mean).toFixed(3) : 'N/A';
+        document.getElementById('slopeValue').textContent = data.slope_mean !== null ? Number(data.slope_mean).toFixed(2) + '°' : 'N/A';
+        document.getElementById('cloudValue').textContent = data.cloud_cover !== undefined && data.cloud_cover !== null ? Number(data.cloud_cover).toFixed(0) + '%' : 'N/A';
+
+        const hint = document.getElementById('monitorHint');
+        if (hint) {
+            hint.style.display = 'none';
+        }
+    }
+
+    function loadWetlandYear(year) {
+        fetch(`/api/wetlands/${wetlandId}/erosion/?year=${year}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                setCurrentData(data);
+                document.getElementById('yearLabel').textContent = year;
+            })
+            .catch(err => console.error('Error:', err));
+    }
+
+    function compareYears() {
+        const yearA = document.getElementById('yearA').value;
+        const yearB = document.getElementById('yearB').value;
+        
+        fetch(`/api/wetlands/compare/?wetland_id=${wetlandId}&year_a=${yearA}&year_b=${yearB}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                
+                document.getElementById('comparisonResult').classList.add('show');
+                document.getElementById('changeValue').textContent = 
+                    (data.mean_change > 0 ? '+' : '') + data.mean_change.toFixed(3);
+                
+                const dirColor = data.direction === 'worsening' ? '#d73027' : 
+                                data.direction === 'improving' ? '#1a9641' : '#999';
+                document.getElementById('changeDir').textContent = data.direction;
+                document.getElementById('changeDir').style.color = dirColor;
+            })
+            .catch(err => console.error('Error:', err));
+    }
+
+    function loadWetlandPrediction() {
+        const btn = document.getElementById('predictBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Computing…';
+
+        fetch(`/api/wetlands/${wetlandId}/predict/`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                renderPredictions(data);
+            })
+            .catch(err => console.error('Error:', err))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-chart-line"></i> Load Soil Loss Trend &amp; Predictions';
+            });
+    }
+
+    function renderPredictions(data) {
+        const section = document.getElementById('predictSection');
+        section.style.display = 'block';
+
+        const histYears = [];
+        for (let y = 2013; y <= 2024; y++) histYears.push(String(y));
+        const predYears = [];
+        for (let y = 2025; y <= 2030; y++) predYears.push(String(y));
+        const allYears = histYears.concat(predYears);
+
+        const histData = histYears.map(function(year) {
+            return data.historical && data.historical[year] !== undefined ? data.historical[year] : null;
+        });
+        const predData = Array(histYears.length - 1).fill(null)
+            .concat([histData[histData.length - 1]])
+            .concat(predYears.map(function(year) {
+                return data.predictions && data.predictions[year] !== undefined ? data.predictions[year] : null;
+            }));
+
+        const slope = Number(data.slope || 0);
+        const direction = slope >= 0 ? 'worsening (increasing soil loss)' : 'improving (decreasing soil loss)';
+        document.getElementById('rateInfo').textContent =
+            'Average rate: ' + (slope >= 0 ? '+' : '') + slope.toFixed(4) + ' risk units/year (' + direction + ')';
+
+        if (predictChart) predictChart.destroy();
+        const ctx = document.getElementById('predictChart').getContext('2d');
+        predictChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: allYears,
+                datasets: [
+                    {
+                        label: 'Historical Soil Risk',
+                        data: histData.concat(Array(predYears.length).fill(null)),
+                        borderColor: '#d73027',
+                        backgroundColor: 'rgba(215,48,39,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                    },
+                    {
+                        label: 'Predicted Soil Risk',
+                        data: Array(histYears.length - 1).fill(null)
+                            .concat([histData[histData.length - 1]])
+                            .concat(predYears.map(function(year) {
+                                return data.predictions && data.predictions[year] !== undefined ? data.predictions[year] : null;
+                            })),
+                        borderColor: '#1a9641',
+                        borderDash: [6, 4],
+                        backgroundColor: 'rgba(26,152,80,0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { font: { size: 11 } } }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Risk Index', font: { size: 11 } },
+                        beginAtZero: true
+                    },
+                    x: { ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+    }
+
+    function selectRecord(recordId, year, element) {
+        document.querySelectorAll('.history-item').forEach(el => el.classList.remove('selected'));
+        if (element) {
+            element.classList.add('selected');
+        }
+        document.getElementById('yearSlider').value = year;
+        document.getElementById('yearLabel').textContent = year;
+        loadWetlandYear(year);
+        console.log('Selected record:', recordId);
+    }
+</script>
+{% endblock %}
