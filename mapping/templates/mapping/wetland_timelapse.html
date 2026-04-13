@@ -1,0 +1,602 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Preview Frames{% endblock %}
+{% block page_title %}Preview Frames{% endblock %}
+
+{% block extra_head %}
+<style>
+    .preview-page {
+        min-height: 100%;
+        background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 48%, #ecfeff 100%);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .card {
+        background: #ffffff;
+        border: 1px solid #dbe7f3;
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .title-wrap h3 {
+        margin: 0;
+        font-size: 24px;
+        color: #0f172a;
+    }
+
+    .title-sub {
+        margin-top: 4px;
+        font-size: 13px;
+        color: #64748b;
+    }
+
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        background: #e0f2fe;
+        color: #075985;
+    }
+
+    .status-chip.running {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .status-chip.failed {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .status-chip.completed {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .action-btn {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0f172a;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .action-btn.primary {
+        background: #0a84ff;
+        border-color: #0a84ff;
+        color: #ffffff;
+    }
+
+    .action-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
+    .player-card {
+        display: grid;
+        grid-template-rows: auto auto auto;
+        gap: 10px;
+    }
+
+    .frame-stage {
+        border-radius: 12px;
+        overflow: hidden;
+        background: radial-gradient(circle at top left, #0f2239 0%, #0b1628 62%, #070f1d 100%);
+        border: 1px solid #d6e3f1;
+    }
+
+    .frame-image {
+        width: 100%;
+        display: block;
+        aspect-ratio: 16 / 9;
+        object-fit: contain;
+        background: rgba(15, 23, 42, 0.18);
+    }
+
+    .control-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .ctrl-btn {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .ctrl-btn.primary {
+        background: #0a84ff;
+        border-color: #0a84ff;
+        color: #fff;
+        font-weight: 700;
+    }
+
+    .range {
+        width: 100%;
+    }
+
+    .meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: #475569;
+        font-size: 13px;
+    }
+
+    .small-note {
+        font-size: 12px;
+        color: #64748b;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(180px, 1fr));
+        gap: 10px;
+    }
+
+    .summary-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #fff;
+    }
+
+    .label {
+        font-size: 11px;
+        letter-spacing: 0.2px;
+        text-transform: uppercase;
+        color: #64748b;
+    }
+
+    .value {
+        margin-top: 4px;
+        font-size: 20px;
+        font-weight: 800;
+        color: #0f172a;
+    }
+
+    .matrices-head {
+        margin: 2px 0 8px;
+        font-size: 15px;
+        color: #0f172a;
+        font-weight: 700;
+    }
+
+    .matrices-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+        gap: 10px;
+    }
+
+    .chart-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #fff;
+        padding: 10px;
+    }
+
+    .chart-title {
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .chart-wrap {
+        position: relative;
+        height: 140px;
+    }
+
+    @media (max-width: 1100px) {
+        .matrices-grid {
+            grid-template-columns: repeat(2, minmax(200px, 1fr));
+        }
+    }
+
+    @media (max-width: 760px) {
+        .summary-grid,
+        .matrices-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="preview-page">
+    <section class="card toolbar">
+        <div class="title-wrap">
+            <h3>Preview Frames</h3>
+            <div class="title-sub">{{ wetland_summary }}</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span id="statusChip" class="status-chip">{{ timelapse_export_status }}</span>
+            <button id="reExportBtn" class="action-btn">Re-export</button>
+            <a id="downloadLink" class="action-btn primary" href="{{ timelapse_download_url|default:'#' }}" {% if not timelapse_download_url %}style="display:none;"{% endif %}>Download GIF</a>
+        </div>
+    </section>
+
+    <section class="card player-card">
+        <div class="frame-stage">
+            <img id="frameImage" class="frame-image" alt="Frame preview">
+        </div>
+
+        <div class="control-row">
+            <button id="prevBtn" class="ctrl-btn">Prev</button>
+            <button id="playBtn" class="ctrl-btn primary">Play</button>
+            <button id="nextBtn" class="ctrl-btn">Next</button>
+            <select id="speedSelect" class="ctrl-btn">
+                <option value="500">0.5s</option>
+                <option value="1000" selected>1s</option>
+                <option value="2000">2s</option>
+                <option value="3000">3s</option>
+            </select>
+            <span id="statusLine" class="small-note"></span>
+        </div>
+
+        <input id="frameSlider" class="range" type="range" min="0" max="0" value="0">
+
+        <div class="meta-row">
+            <span id="frameYear">Year: -</span>
+            <span id="framePos">0 / 0</span>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="summary-grid">
+            <div class="summary-item">
+                <div class="label">Wetland Area (ha)</div>
+                <div class="value">{{ wetland_area_ha|default:"N/A" }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="label">Export Status</div>
+                <div id="metricStatus" class="value" style="font-size:18px;">{{ timelapse_export_status }}</div>
+            </div>
+            <div class="summary-item">
+                <div class="label">Frames / Years</div>
+                <div class="value" style="font-size:18px;"><span id="metricFrames">{{ timelapse_frames_loaded }}</span> | <span id="metricSpan">{{ timelapse_year_span }}</span></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="matrices-head">Assessment matrices</div>
+        <div class="matrices-grid">
+            <div class="chart-card">
+                <div class="chart-title">Wetland Area Change (ha) by Year</div>
+                <div class="chart-wrap"><canvas id="chart-AREA"></canvas></div>
+                <div id="areaChangeNote" class="small-note"></div>
+            </div>
+
+            <div class="chart-card"><div class="chart-title">NDWI by Year</div><div class="chart-wrap"><canvas id="chart-NDWI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">NDVI by Year</div><div class="chart-wrap"><canvas id="chart-NDVI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">MNDWI by Year</div><div class="chart-wrap"><canvas id="chart-MNDWI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">LSWI by Year</div><div class="chart-wrap"><canvas id="chart-LSWI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">EVI by Year</div><div class="chart-wrap"><canvas id="chart-EVI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">AWEI by Year</div><div class="chart-wrap"><canvas id="chart-AWEI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">SAVI by Year</div><div class="chart-wrap"><canvas id="chart-SAVI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">NDMI by Year</div><div class="chart-wrap"><canvas id="chart-NDMI"></canvas></div></div>
+            <div class="chart-card"><div class="chart-title">TCW by Year</div><div class="chart-wrap"><canvas id="chart-TCW"></canvas></div></div>
+        </div>
+    </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+(function() {
+    const wetlandId = Number('{{ wetland.id }}');
+    const defaults = JSON.parse('{{ timelapse_defaults_json|escapejs }}');
+    const metricPayload = JSON.parse('{{ timelapse_metrics_json|escapejs }}');
+    const metricYears = Array.isArray(metricPayload.years) ? metricPayload.years : [];
+    const metricSeries = metricPayload.series || {};
+    const areaSeries = Array.isArray(metricPayload.area_ha) ? metricPayload.area_ha : [];
+    const areaChangePercent = metricPayload.area_change_percent;
+
+    let jobId = Number('{{ timelapse_job_id|default:0 }}') || null;
+    let shouldPoll = '{{ timelapse_should_poll|yesno:"true,false" }}' === 'true';
+    let frames = JSON.parse('{{ timelapse_frames_json|escapejs }}') || [];
+    let pollTimer = null;
+
+    const frameImage = document.getElementById('frameImage');
+    const frameSlider = document.getElementById('frameSlider');
+    const frameYear = document.getElementById('frameYear');
+    const framePos = document.getElementById('framePos');
+    const prevBtn = document.getElementById('prevBtn');
+    const playBtn = document.getElementById('playBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const speedSelect = document.getElementById('speedSelect');
+    const statusLine = document.getElementById('statusLine');
+    const statusChip = document.getElementById('statusChip');
+    const reExportBtn = document.getElementById('reExportBtn');
+    const downloadLink = document.getElementById('downloadLink');
+    const metricStatus = document.getElementById('metricStatus');
+    const metricFrames = document.getElementById('metricFrames');
+    const metricSpan = document.getElementById('metricSpan');
+    const areaChangeNote = document.getElementById('areaChangeNote');
+
+    let currentFrame = 0;
+    let isPlaying = false;
+    let playTimer = null;
+
+    function getCsrfToken() {
+        const cookie = document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith('csrftoken='));
+        return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+    }
+
+    function setStatusChip(status) {
+        const normalized = String(status || 'idle').toLowerCase();
+        statusChip.textContent = normalized;
+        metricStatus.textContent = normalized;
+        statusChip.classList.remove('running', 'failed', 'completed');
+        if (normalized === 'running' || normalized === 'pending') {
+            statusChip.classList.add('running');
+        } else if (normalized === 'failed') {
+            statusChip.classList.add('failed');
+        } else if (normalized === 'completed') {
+            statusChip.classList.add('completed');
+        }
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearTimeout(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function stopPlayback() {
+        isPlaying = false;
+        playBtn.textContent = 'Play';
+        if (playTimer) {
+            clearTimeout(playTimer);
+            playTimer = null;
+        }
+    }
+
+    function renderFrame() {
+        if (!frames.length) {
+            frameImage.removeAttribute('src');
+            frameYear.textContent = 'Year: -';
+            framePos.textContent = '0 / 0';
+            frameSlider.min = 0;
+            frameSlider.max = 0;
+            frameSlider.value = 0;
+            metricFrames.textContent = '0';
+            return;
+        }
+
+        const frame = frames[currentFrame];
+        frameImage.src = frame.url;
+        frameYear.textContent = 'Year: ' + frame.year;
+        framePos.textContent = (currentFrame + 1) + ' / ' + frames.length;
+        frameSlider.min = 0;
+        frameSlider.max = frames.length - 1;
+        frameSlider.value = currentFrame;
+        metricFrames.textContent = String(frames.length);
+    }
+
+    function createChart(canvasId, label, data, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: metricYears,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    backgroundColor: color,
+                    borderRadius: 5,
+                    borderSkipped: false,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { mode: 'index', intersect: false },
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: { ticks: { font: { size: 10 } } },
+                },
+            },
+        });
+    }
+
+    function loadFramesForJob(currentJobId) {
+        return fetch('/api/timelapse/' + currentJobId + '/frames/')
+            .then(r => r.json())
+            .then(data => {
+                frames = Array.isArray(data.frames) ? data.frames : [];
+                currentFrame = 0;
+                renderFrame();
+            });
+    }
+
+    function pollStatus(currentJobId) {
+        fetch('/api/timelapse/' + currentJobId + '/status/')
+            .then(r => r.json())
+            .then(data => {
+                const status = data.status || 'unknown';
+                setStatusChip(status);
+                statusLine.textContent = 'Job #' + data.job_id + ': ' + status;
+
+                if (status === 'completed') {
+                    loadFramesForJob(currentJobId).finally(function() {
+                        downloadLink.href = '/api/timelapse/' + currentJobId + '/download/';
+                        downloadLink.style.display = 'inline-block';
+                        reExportBtn.disabled = false;
+                        stopPolling();
+                    });
+                    return;
+                }
+
+                if (status === 'failed') {
+                    statusLine.textContent = 'Job failed. Use Re-export to run again.';
+                    reExportBtn.disabled = false;
+                    stopPolling();
+                    return;
+                }
+
+                pollTimer = setTimeout(function() { pollStatus(currentJobId); }, 2500);
+            })
+            .catch(function() {
+                statusLine.textContent = 'Polling interrupted. Retrying...';
+                pollTimer = setTimeout(function() { pollStatus(currentJobId); }, 4000);
+            });
+    }
+
+    function startExport(isManual) {
+        stopPolling();
+        stopPlayback();
+        reExportBtn.disabled = true;
+        downloadLink.style.display = 'none';
+        statusLine.textContent = isManual ? 'Submitting re-export job...' : 'Starting export job...';
+
+        const payload = {
+            wetland_id: wetlandId,
+            start_year: Number(defaults.start_year || 2018),
+            end_year: Number(defaults.end_year || 2023),
+            buffer_meters: Number(defaults.buffer_meters || 100),
+            cloud_threshold: Number(defaults.cloud_threshold || 20),
+            dimensions: Number(defaults.dimensions || 300),
+            frames_per_second: Number(defaults.frames_per_second || 1),
+        };
+
+        fetch('/api/timelapse/start/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(payload),
+        })
+            .then(async function(r) {
+                const data = await r.json();
+                if (!r.ok) {
+                    throw new Error(data.error || 'Failed to start export job');
+                }
+                return data;
+            })
+            .then(function(data) {
+                jobId = data.job_id;
+                setStatusChip('pending');
+                statusLine.textContent = 'Job #' + jobId + ' queued';
+                pollStatus(jobId);
+            })
+            .catch(function(err) {
+                reExportBtn.disabled = false;
+                statusLine.textContent = err.message;
+                setStatusChip('failed');
+            });
+    }
+
+    createChart('chart-AREA', 'Area (ha)', areaSeries, '#0284c7');
+    createChart('chart-NDWI', 'NDWI', metricSeries.NDWI || [], '#0a84ff');
+    createChart('chart-NDVI', 'NDVI', metricSeries.NDVI || [], '#16a34a');
+    createChart('chart-MNDWI', 'MNDWI', metricSeries.MNDWI || [], '#06b6d4');
+    createChart('chart-LSWI', 'LSWI', metricSeries.LSWI || [], '#2563eb');
+    createChart('chart-EVI', 'EVI', metricSeries.EVI || [], '#d97706');
+    createChart('chart-AWEI', 'AWEI', metricSeries.AWEI || [], '#7c3aed');
+    createChart('chart-SAVI', 'SAVI', metricSeries.SAVI || [], '#c2410c');
+    createChart('chart-NDMI', 'NDMI', metricSeries.NDMI || [], '#0891b2');
+    createChart('chart-TCW', 'TCW', metricSeries.TCW || [], '#475569');
+
+    if (typeof areaChangePercent === 'number') {
+        const trend = areaChangePercent > 0 ? 'increase' : (areaChangePercent < 0 ? 'decrease' : 'no change');
+        areaChangeNote.textContent = 'Estimated net area ' + trend + ' across span: ' + areaChangePercent + '%';
+    } else {
+        areaChangeNote.textContent = 'Area change trend is not available for all years.';
+    }
+
+    metricSpan.textContent = '{{ timelapse_year_span|escapejs }}';
+    setStatusChip('{{ timelapse_export_status|escapejs }}');
+
+    reExportBtn.addEventListener('click', function() {
+        startExport(true);
+    });
+
+    prevBtn.addEventListener('click', function() {
+        stopPlayback();
+        if (!frames.length) return;
+        currentFrame = Math.max(0, currentFrame - 1);
+        renderFrame();
+    });
+
+    nextBtn.addEventListener('click', function() {
+        stopPlayback();
+        if (!frames.length) return;
+        currentFrame = Math.min(frames.length - 1, currentFrame + 1);
+        renderFrame();
+    });
+
+    frameSlider.addEventListener('input', function() {
+        stopPlayback();
+        currentFrame = Number(frameSlider.value || 0);
+        renderFrame();
+    });
+
+    playBtn.addEventListener('click', function() {
+        if (!frames.length) return;
+        if (isPlaying) {
+            stopPlayback();
+            return;
+        }
+
+        isPlaying = true;
+        playBtn.textContent = 'Pause';
+
+        const step = function() {
+            if (!isPlaying) return;
+            currentFrame = (currentFrame + 1) % frames.length;
+            renderFrame();
+            playTimer = setTimeout(step, Number(speedSelect.value || 1000));
+        };
+
+        playTimer = setTimeout(step, Number(speedSelect.value || 1000));
+    });
+
+    renderFrame();
+    if (shouldPoll && jobId) {
+        statusLine.textContent = 'Job #' + jobId + ' in progress...';
+        pollStatus(jobId);
+        reExportBtn.disabled = true;
+    } else if (!frames.length && jobId) {
+        statusLine.textContent = 'Loading frame metadata...';
+        loadFramesForJob(jobId).finally(function() {
+            statusLine.textContent = frames.length ? 'Preview ready.' : 'Frames are still being prepared.';
+        });
+    } else if (!jobId) {
+        startExport(false);
+    } else {
+        statusLine.textContent = 'Preview ready.';
+    }
+})();
+</script>
+{% endblock %}

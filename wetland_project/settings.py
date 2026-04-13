@@ -10,6 +10,13 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
+CSRF_TRUSTED_ORIGINS = [
+    'https://localhost:8000',
+    'https://127.0.0.1:8000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -67,13 +74,15 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Earth Engine Configuration ──────────────────────────────────────
-EE_PROJECT = os.environ.get('EE_PROJECT', 'tokelo-329815')
+EE_PROJECT = os.environ.get('EE_PROJECT', 'crypto-analogy-444606-s2')
 # Replace with your actual GEE asset ID after running the export task
-EE_ASSET_ID = 'projects/tokelo-329815/assets/Lesotho_Wetland_Classification_2013_2023'
+EE_ASSET_ID = 'projects/crypto-analogy-444606-s2/assets/Lesotho_Wetland_Classification_2013_2023'
 # Path to your GEE service account key JSON (for production)
 # For development, ee.Authenticate() is used instead
 EE_SERVICE_ACCOUNT_KEY = os.environ.get('EE_SERVICE_ACCOUNT_KEY', '')
