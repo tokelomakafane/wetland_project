@@ -121,11 +121,11 @@
                 <span class="nav-icon">&#127755;</span>
                 <span class="nav-label">Soil Erosion</span>
             </a>
-            <a href="{% url 'mapping:timelapse' %}" class="nav-item {% if active_page == 'timelapse' %}active{% endif %}">
+            <a href="{% url 'timelapse:timelapse' %}" class="nav-item {% if active_page == 'timelapse' %}active{% endif %}">
                 <span class="nav-icon">&#127909;</span>
                 <span class="nav-label">Timelapse</span>
             </a>
-            <a href="{% url 'mapping:wetland_registry' %}" class="nav-item {% if active_page == 'wetland_registry' or active_page == 'add_wetland' or active_page == 'upload_wetlands' or active_page == 'monitor_wetland' %}active{% endif %}">
+            <a href="{% url 'wetlands:wetland_registry' %}" class="nav-item {% if active_page == 'wetland_registry' or active_page == 'add_wetland' or active_page == 'upload_wetlands' or active_page == 'monitor_wetland' %}active{% endif %}">
                 <span class="nav-icon">&#127794;</span>
                 <span class="nav-label">Wetland Registry</span>
             </a>

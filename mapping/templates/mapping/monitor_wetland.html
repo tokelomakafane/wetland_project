@@ -179,7 +179,7 @@
 {% block content %}
 <!-- HEADER -->
 <div class="monitor-header">
-    <a href="{% url 'mapping:wetland_registry' %}" class="btn-back"><i class="fas fa-arrow-left"></i> Registry</a>
+    <a href="{% url 'wetlands:wetland_registry' %}" class="btn-back"><i class="fas fa-arrow-left"></i> Registry</a>
     <h1><i class="fas fa-microscope"></i> {{ wetland.name }}</h1>
     <p><i class="fas fa-map-marker-alt"></i> {{ wetland.village }} • {{ wetland.area_ha }} ha • v{{ wetland.version }}</p>
     <div class="monitor-badges">
