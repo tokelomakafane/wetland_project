@@ -5,12 +5,12 @@ from pathlib import Path
 from django.db import IntegrityError, models
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.conf import settings
 
 from mapping.ee_utils import initialize_ee
 from mapping.models import Wetland, WetlandMonitoringRecord
 
 from .forms import BulkWetlandUploadForm, WetlandFilterForm, WetlandForm
-
 
 WETLAND_NAMES = [
     'Mantsonyane',

@@ -11,7 +11,6 @@ urlpatterns = [
     path('lst/', views.lst_view, name='lst'),
     path('alerts/', views.alerts_view, name='alerts'),
     path('community/', views.community_view, name='community'),
-    path('drone-upload/', views.drone_upload_view, name='drone_upload'),
     path('users/', views.users_view, name='users'),
     path('api/ee-tiles/', views.ee_tile_url, name='ee_tiles'),
     path('api/wetland-stats/', views.wetland_stats, name='wetland_stats'),

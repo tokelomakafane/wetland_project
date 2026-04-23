@@ -88,10 +88,6 @@ def community_view(request):
     return render(request, 'mapping/community.html', {'active_page': 'community'})
 
 
-def drone_upload_view(request):
-    return render(request, 'mapping/drone_upload.html', {'active_page': 'drone_upload'})
-
-
 def users_view(request):
     return render(request, 'mapping/users.html', {'active_page': 'users'})
 
