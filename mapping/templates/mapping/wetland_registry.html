@@ -76,6 +76,18 @@
     .poly-item.selected { background: #fce4ec; border-left: 3px solid #d73027; padding-left: 15px; }
     .poly-name { font-size: 13px; font-weight: 600; color: #333; }
     .poly-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .poly-actions {
+        display: flex; gap: 6px; margin-top: 7px;
+    }
+    .poly-action-btn {
+        border: 1px solid #ddd; border-radius: 5px; padding: 4px 7px;
+        background: #fff; color: #333; font-size: 10px; font-weight: 600;
+        cursor: pointer;
+    }
+    .poly-action-btn:hover { background: #f3f3f3; }
+    .poly-action-btn.delete {
+        border-color: #ef9a9a; color: #b71c1c;
+    }
     .status-pill {
         font-size: 9px; font-weight: 700; padding: 3px 8px;
         border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px;
@@ -102,11 +114,66 @@
         padding: 0;
     }
 
+    /* ── Modal ── */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+        display: none; align-items: center; justify-content: center; z-index: 1500;
+    }
+    .modal-backdrop.show { display: flex; }
+    .registry-modal {
+        width: 92%; max-width: 560px; background: #fff; border-radius: 10px;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18); overflow: hidden;
+    }
+    .registry-modal-header {
+        padding: 12px 16px; border-bottom: 1px solid #eee; display: flex;
+        align-items: center; justify-content: space-between;
+    }
+    .registry-modal-title { margin: 0; font-size: 15px; font-weight: 700; color: #222; }
+    .registry-modal-close {
+        border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer;
+        color: #888;
+    }
+    .registry-modal-body { padding: 14px 16px; }
+    .registry-form-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .registry-form-field { display: flex; flex-direction: column; gap: 4px; }
+    .registry-form-field.full { grid-column: 1 / -1; }
+    .registry-form-field label { font-size: 12px; font-weight: 600; color: #444; }
+    .registry-form-field input,
+    .registry-form-field select,
+    .registry-form-field textarea {
+        border: 1px solid #ddd; border-radius: 6px; padding: 8px 9px; font-size: 12px;
+    }
+    .registry-form-field textarea { min-height: 80px; resize: vertical; }
+    .registry-modal-actions {
+        display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px;
+        border-top: 1px solid #eee; background: #fafafa;
+    }
+    .modal-btn {
+        border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px;
+        font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .modal-btn.primary { border-color: #d73027; background: #d73027; color: #fff; }
+    .popup-actions {
+        margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .popup-action-btn {
+        border: 1px solid #ddd; border-radius: 5px; padding: 6px 8px;
+        text-decoration: none; font-size: 11px; color: #333; cursor: pointer; background: #fff;
+    }
+    .popup-action-btn.delete { border-color: #ef9a9a; color: #b71c1c; }
+
+    @media (max-width: 700px) {
+        .registry-form-grid { grid-template-columns: 1fr; }
+    }
+
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="registry-page">
+    <form id="csrfBootstrap" style="display:none;">{% csrf_token %}</form>
     <div class="registry-top">
         <!-- MAP -->
         <div class="registry-map">
@@ -117,10 +184,10 @@
         <div class="registry-panel">
             <!-- Action Buttons -->
             <div class="action-buttons">
-                <a href="{% url 'mapping:add_wetland' %}" class="action-btn primary">
+                <a href="{% url 'wetlands:add_wetland' %}" class="action-btn primary">
                     <i class="fas fa-pencil-alt"></i> Draw
                 </a>
-                <a href="{% url 'mapping:upload_wetlands' %}" class="action-btn">
+                <a href="{% url 'wetlands:upload_wetlands' %}" class="action-btn">
                     <i class="fas fa-upload"></i> Upload
                 </a>
             </div>
@@ -145,6 +212,61 @@
     </div>
 </div>
 
+<div id="editModalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="registry-modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <div class="registry-modal-header">
+            <h3 id="editModalTitle" class="registry-modal-title">Edit Wetland</h3>
+            <button type="button" class="registry-modal-close" onclick="closeEditModal()">&times;</button>
+        </div>
+        <div class="registry-modal-body">
+            <div class="registry-form-grid">
+                <div class="registry-form-field full">
+                    <label for="editName">Name</label>
+                    <input id="editName" type="text" maxlength="255">
+                </div>
+                <div class="registry-form-field">
+                    <label for="editVillage">Village</label>
+                    <input id="editVillage" type="text" maxlength="255">
+                </div>
+                <div class="registry-form-field">
+                    <label for="editElevation">Elevation (m)</label>
+                    <input id="editElevation" type="number" step="1">
+                </div>
+                <div class="registry-form-field">
+                    <label for="editStatus">Status</label>
+                    <select id="editStatus">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="monitoring">Under Monitoring</option>
+                        <option value="archived">Archived</option>
+                    </select>
+                </div>
+                <div class="registry-form-field">
+                    <label for="editRisk">Risk Level</label>
+                    <select id="editRisk">
+                        <option value="low">Low</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="high">High</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
+                </div>
+                <div class="registry-form-field full">
+                    <label for="editUploadedBy">Uploaded By</label>
+                    <input id="editUploadedBy" type="text" maxlength="255">
+                </div>
+                <div class="registry-form-field full">
+                    <label for="editDescription">Description</label>
+                    <textarea id="editDescription"></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="registry-modal-actions">
+            <button type="button" class="modal-btn" onclick="closeEditModal()">Cancel</button>
+            <button type="button" class="modal-btn primary" onclick="submitEditWetland()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
 <!-- Leaflet Maps -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -156,6 +278,7 @@
     let drawnItems = L.featureGroup();
     let featureLayers = {}; // Store references to drawn layers by index
     let currentPopup = null;
+    let editWetlandId = null;
 
     // Initialize map
     function initMap() {
@@ -228,6 +351,17 @@
             const name = props.name || `Wetland ${idx}`;
             const village = props.village || '';
             const area = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : '';
+            const escapedName = String(name).replace(/'/g, "\\'");
+            const rowActions = (!isStatic && props.id) ? `
+                <div class="poly-actions">
+                    <button type="button" class="poly-action-btn" onclick="event.stopPropagation(); openEditModal(${idx})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button type="button" class="poly-action-btn delete" onclick="event.stopPropagation(); deleteWetland(${props.id}, '${escapedName}')">
+                        <i class="fas fa-trash-alt"></i> Delete
+                    </button>
+                </div>
+            ` : '';
 
             li.innerHTML = `
                 <div class="poly-name">${name}</div>
@@ -236,6 +370,7 @@
                     ${village ? `<span style="font-size:10px;color:#666;">${village}</span>` : ''}
                     ${area ? `<span style="font-size:10px;color:#888;">📍 ${area}</span>` : ''}
                 </div>
+                ${rowActions}
             `;
             polyList.appendChild(li);
         });
@@ -303,6 +438,17 @@
             const monitorBtn = wetlandId ? 
                 `<a href="/wetlands/${wetlandId}/monitor/" style="display: inline-block; background: #d73027; color: #fff; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600; margin-top: 10px; transition: 0.2s;" onmouseover="this.style.background='#b71c1c'" onmouseout="this.style.background='#d73027'"><i class="fas fa-chart-line"></i> Monitor</a>` 
                 : '';
+
+            const managementBtns = (!isStatic && wetlandId) ? `
+                <div class="popup-actions">
+                    <button type="button" class="popup-action-btn" onclick="openEditModal(${idx})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button type="button" class="popup-action-btn delete" onclick="deleteWetland(${wetlandId}, '${name.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-trash-alt"></i> Delete
+                    </button>
+                </div>
+            ` : '';
             
             const popupContent = `
                 <div style="width: 280px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
@@ -319,6 +465,7 @@
                         <p style="margin: 0; font-size: 12px;"><strong>Description:</strong></p>
                         <p style="margin: 4px 0 0 0; font-size: 11px; color: #666; line-height: 1.5;">${description}</p>
                         ${monitorBtn}
+                        ${managementBtns}
                     </div>
                 </div>
             `;
@@ -383,6 +530,104 @@
                 map.fitBounds(layer.getBounds(), { padding: [80, 80], maxZoom: 15 });
             }
         }
+    }
+
+    function getCsrfToken() {
+        const tokenInput = document.querySelector('#csrfBootstrap input[name="csrfmiddlewaretoken"]');
+        if (tokenInput && tokenInput.value) {
+            return tokenInput.value;
+        }
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.startsWith('csrftoken=')) {
+                return decodeURIComponent(cookie.substring('csrftoken='.length));
+            }
+        }
+        return '';
+    }
+
+    function openEditModal(idx) {
+        const feature = geojsonData.features[idx];
+        if (!feature || !feature.properties) return;
+        const props = feature.properties;
+
+        if (!props.id) {
+            alert('Cannot edit this wetland.');
+            return;
+        }
+
+        editWetlandId = props.id;
+        document.getElementById('editName').value = props.name || '';
+        document.getElementById('editVillage').value = props.village || '';
+        document.getElementById('editElevation').value = props.elevation_m || '';
+        document.getElementById('editStatus').value = props.status || 'monitoring';
+        document.getElementById('editRisk').value = props.risk_level || 'unknown';
+        document.getElementById('editUploadedBy').value = props.uploaded_by || '';
+        document.getElementById('editDescription').value = props.description || '';
+
+        document.getElementById('editModalBackdrop').classList.add('show');
+    }
+
+    function closeEditModal() {
+        editWetlandId = null;
+        document.getElementById('editModalBackdrop').classList.remove('show');
+    }
+
+    function submitEditWetland() {
+        if (!editWetlandId) return;
+
+        const payload = {
+            name: document.getElementById('editName').value.trim(),
+            village: document.getElementById('editVillage').value.trim(),
+            elevation_m: document.getElementById('editElevation').value,
+            status: document.getElementById('editStatus').value,
+            risk_level: document.getElementById('editRisk').value,
+            uploaded_by: document.getElementById('editUploadedBy').value.trim(),
+            description: document.getElementById('editDescription').value.trim(),
+        };
+
+        fetch(`/wetlands/${editWetlandId}/edit/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(payload),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'Failed to update wetland.');
+                return;
+            }
+            closeEditModal();
+            window.location.reload();
+        })
+        .catch(() => alert('Network error while updating wetland.'));
+    }
+
+    function deleteWetland(wetlandId, wetlandName) {
+        if (!wetlandId) return;
+
+        const confirmed = window.confirm(`Delete wetland "${wetlandName}"? This cannot be undone.`);
+        if (!confirmed) return;
+
+        fetch(`/wetlands/${wetlandId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+            },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'Failed to delete wetland.');
+                return;
+            }
+            window.location.reload();
+        })
+        .catch(() => alert('Network error while deleting wetland.'));
     }
 
     // Initialize on load

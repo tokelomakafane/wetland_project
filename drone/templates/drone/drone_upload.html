@@ -1,0 +1,443 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Drone Upload{% endblock %}
+{% block page_title %}Drone Upload{% endblock %}
+
+{% block extra_head %}
+<style>
+    .drone-shell {
+        display: grid;
+        grid-template-columns: 390px 1fr;
+        min-height: calc(100vh - 120px);
+        gap: 0;
+        background: linear-gradient(180deg, #f8fbff 0%, #eef5ee 100%);
+    }
+    .drone-panel {
+        background: #fff;
+        border-right: 1px solid rgba(17, 24, 39, 0.08);
+        padding: 24px;
+        overflow-y: auto;
+    }
+    .drone-stage {
+        padding: 24px;
+        position: relative;
+    }
+    .panel-card, .result-card, .wetland-card, .manual-card {
+        background: #fff;
+        border: 1px solid rgba(17, 24, 39, 0.08);
+        border-radius: 18px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+    }
+    .panel-card { padding: 20px; margin-bottom: 18px; }
+    .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #eef6ea;
+        color: #2f6b2f;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        margin-bottom: 12px;
+    }
+    .headline { font-size: 26px; font-weight: 800; color: #102018; margin: 0 0 10px; }
+    .subtext { font-size: 13px; line-height: 1.6; color: #55616d; margin-bottom: 16px; }
+    .dropzone {
+        border: 2px dashed #b9c8b7;
+        border-radius: 18px;
+        background: #f9fcf8;
+        padding: 30px 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: 0.2s ease;
+    }
+    .dropzone.dragover { border-color: #2f6b2f; background: #eef8ee; }
+    .dropzone strong { display: block; margin-top: 12px; color: #17321b; }
+    .dropzone small { color: #677381; }
+    .file-preview {
+        margin-top: 16px;
+        display: none;
+    }
+    .file-preview.show { display: block; }
+    .file-preview img {
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid #e7ece8;
+        max-height: 220px;
+        object-fit: cover;
+    }
+    .field {
+        margin-top: 14px;
+    }
+    .field label {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: #3d4852;
+        margin-bottom: 6px;
+    }
+    .field select, .field button, .field input {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid #d8e0d7;
+        font: inherit;
+        background: #fff;
+    }
+    .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-primary { background: #1f6b41; color: #fff; }
+    .btn-secondary { background: #edf2ee; color: #29412f; }
+    .result-card, .wetland-card, .manual-card { padding: 18px; margin-bottom: 16px; }
+    .section-title { font-size: 14px; font-weight: 800; color: #1a2a22; margin: 0 0 12px; }
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .metric {
+        border-radius: 14px;
+        background: #f7faf7;
+        padding: 12px;
+    }
+    .metric span { display: block; color: #6a7680; font-size: 11px; margin-bottom: 6px; }
+    .metric strong { font-size: 16px; color: #16231a; }
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 12px;
+    }
+    .pill-low { background: #e6f5e9; color: #256432; }
+    .pill-moderate { background: #fff3d9; color: #8b5b15; }
+    .pill-high { background: #fde2e2; color: #a83232; }
+    .hidden { display: none !important; }
+    .result-json {
+        white-space: pre-wrap;
+        background: #0f172a;
+        color: #d6e2ff;
+        border-radius: 14px;
+        padding: 14px;
+        font-size: 12px;
+        overflow: auto;
+        max-height: 260px;
+    }
+    .hint { color: #5d6b75; font-size: 12px; line-height: 1.5; }
+    .map-area {
+        min-height: 100%;
+        background:
+            radial-gradient(circle at top right, rgba(31, 107, 65, 0.18), transparent 22%),
+            radial-gradient(circle at bottom left, rgba(146, 178, 154, 0.22), transparent 24%),
+            linear-gradient(135deg, #eef5ef 0%, #dfe9df 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+    }
+    .map-panel {
+        width: min(860px, 100%);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(17, 24, 39, 0.08);
+        border-radius: 26px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+        padding: 22px;
+    }
+    .map-panel h3 { margin: 0 0 10px; font-size: 22px; color: #11281a; }
+    .map-panel p { margin: 0 0 18px; color: #55616d; line-height: 1.6; }
+    .wetland-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .wetland-item {
+        border: 1px solid #e5ebe6;
+        background: #fff;
+        border-radius: 14px;
+        padding: 14px;
+    }
+    .wetland-item strong { display: block; color: #16311f; margin-bottom: 4px; }
+    .wetland-item span { color: #6a7680; font-size: 12px; }
+    @media (max-width: 980px) {
+        .drone-shell { grid-template-columns: 1fr; }
+        .drone-panel { border-right: 0; border-bottom: 1px solid rgba(17, 24, 39, 0.08); }
+        .wetland-list, .metric-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="drone-shell">
+    <aside class="drone-panel">
+        <div class="panel-card">
+            <div class="eyebrow">Drone workflow</div>
+            <h1 class="headline">Upload a PNG and update the wetland status</h1>
+            <p class="subtext">
+                The app checks image metadata, looks for geotags, matches the nearest wetland when possible,
+                then derives status metrics from the uploaded image itself to update the wetland record.
+            </p>
+
+            <form id="uploadForm">
+                {% csrf_token %}
+                <div class="dropzone" id="dropzone">
+                    <input class="hidden" type="file" id="imageInput" accept="image/png" />
+                    <strong>Drop PNG image here</strong>
+                    <small>or click to choose a file</small>
+                </div>
+
+                <div class="file-preview" id="filePreview">
+                    <img id="previewImg" alt="Selected PNG preview" />
+                </div>
+
+                <div class="field">
+                    <label for="wetlandSelect">Wetland selection</label>
+                    <select id="wetlandSelect" disabled>
+                        <option value="">The app will match a wetland automatically if the image has geotag data</option>
+                        {% for wetland in wetlands %}
+                            <option value="{{ wetland.id }}">{{ wetland.name }} - {{ wetland.village }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn-secondary" id="clearBtn">Clear</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Analyze image</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="result-card hidden" id="resultCard">
+            <h2 class="section-title">Analysis result</h2>
+            <div id="statusLine"></div>
+            <div class="metric-grid" id="metricGrid"></div>
+            <div class="hint" id="matchHint"></div>
+        </div>
+
+        <div class="manual-card hidden" id="manualCard">
+            <h2 class="section-title">Manual wetland selection</h2>
+            <p class="hint">No geotag was found, or the image was too far from any known wetland. Pick the target wetland and submit again.</p>
+            <div class="field">
+                <label for="manualWetlandSelect">Choose wetland</label>
+                <select id="manualWetlandSelect">
+                    <option value="">Select a wetland</option>
+                    {% for wetland in wetlands %}
+                        <option value="{{ wetland.id }}">{{ wetland.name }} - {{ wetland.village }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-primary" id="manualAnalyzeBtn">Analyze selected wetland</button>
+            </div>
+        </div>
+
+        <div class="result-card hidden" id="jsonCard">
+            <h2 class="section-title">Raw response</h2>
+            <pre class="result-json" id="resultJson"></pre>
+        </div>
+    </aside>
+
+    <main class="drone-stage">
+        <div class="map-area">
+            <div class="map-panel">
+                <h3>Wetland registry overview</h3>
+                <p>The right side can later host a live map. For now, it shows the wetlands available for manual selection and review.</p>
+                <div class="wetland-list">
+                    {% for wetland in wetlands|slice:":8" %}
+                        <div class="wetland-item">
+                            <strong>{{ wetland.name }}</strong>
+                            <span>{{ wetland.village }} · {{ wetland.district }}</span>
+                        </div>
+                    {% empty %}
+                        <div class="wetland-item">
+                            <strong>No wetlands found</strong>
+                            <span>Seed the registry before using the drone upload workflow.</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+(function () {
+    const uploadForm = document.getElementById('uploadForm');
+    const dropzone = document.getElementById('dropzone');
+    const imageInput = document.getElementById('imageInput');
+    const filePreview = document.getElementById('filePreview');
+    const previewImg = document.getElementById('previewImg');
+    const clearBtn = document.getElementById('clearBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const resultCard = document.getElementById('resultCard');
+    const statusLine = document.getElementById('statusLine');
+    const metricGrid = document.getElementById('metricGrid');
+    const matchHint = document.getElementById('matchHint');
+    const jsonCard = document.getElementById('jsonCard');
+    const resultJson = document.getElementById('resultJson');
+    const manualCard = document.getElementById('manualCard');
+    const manualWetlandSelect = document.getElementById('manualWetlandSelect');
+    const manualAnalyzeBtn = document.getElementById('manualAnalyzeBtn');
+    const csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]').value;
+    const analyzeUrl = "{% url 'drone:api_analysis' %}";
+    let currentFile = null;
+
+    function renderMetrics(data) {
+        const entries = [
+            ['Vegetation proxy', data.analysis_metrics ? data.analysis_metrics.vegetation_proxy : 'n/a'],
+            ['Dryness proxy', data.analysis_metrics ? data.analysis_metrics.dryness_proxy : 'n/a'],
+            ['Color balance', data.analysis_metrics ? data.analysis_metrics.color_balance : 'n/a'],
+            ['Brightness', data.image_features ? data.image_features.brightness : 'n/a'],
+            ['Texture', data.image_features ? data.image_features.texture : 'n/a'],
+            ['Geo match', data.match_distance_km ? `${data.match_distance_km} km` : 'manual']
+        ];
+
+        metricGrid.innerHTML = entries.map(([label, value]) => `
+            <div class="metric">
+                <span>${label}</span>
+                <strong>${value}</strong>
+            </div>
+        `).join('');
+    }
+
+    function statusClass(level) {
+        if (level === 'high') return 'pill-high';
+        if (level === 'moderate') return 'pill-moderate';
+        return 'pill-low';
+    }
+
+    async function analyze(extraWetlandId) {
+        if (!currentFile) {
+            alert('Choose a PNG file first.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('image', currentFile);
+        if (extraWetlandId) {
+            formData.append('wetland_id', extraWetlandId);
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Analyzing...';
+
+        try {
+            const response = await fetch(analyzeUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                },
+                body: formData,
+            });
+
+            const data = await response.json();
+            jsonCard.classList.remove('hidden');
+            resultJson.textContent = JSON.stringify(data, null, 2);
+
+            if (!response.ok) {
+                if (data.requires_wetland_selection) {
+                    manualCard.classList.remove('hidden');
+                }
+                resultCard.classList.remove('hidden');
+                statusLine.innerHTML = `<div class="status-pill pill-moderate">${data.error || 'Analysis incomplete'}</div>`;
+                matchHint.textContent = data.geotag ? `Geotag found at ${data.geotag.lat}, ${data.geotag.lon}.` : 'No geotag found in the image metadata.';
+                return;
+            }
+
+            manualCard.classList.add('hidden');
+            resultCard.classList.remove('hidden');
+            const pillClass = statusClass(data.inference ? data.inference.risk_level : 'low');
+            const label = data.inference ? data.inference.label : 'Updated';
+            statusLine.innerHTML = `<div class="status-pill ${pillClass}">${label}</div>`;
+            renderMetrics(data);
+
+            const info = [];
+            if (data.wetland) {
+                info.push(`Updated ${data.wetland.name} (${data.wetland.status}, ${data.wetland.risk_level})`);
+            }
+            if (data.geotag) {
+                info.push(`Geotag: ${data.geotag.lat}, ${data.geotag.lon}`);
+            }
+            if (data.match_distance_km) {
+                info.push(`Matched within ${data.match_distance_km} km`);
+            }
+            matchHint.textContent = info.join(' · ') || 'Wetland updated successfully.';
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Analyze image';
+        }
+    }
+
+    dropzone.addEventListener('click', () => imageInput.click());
+    dropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = event.dataTransfer.files[0];
+        if (file) {
+            imageInput.files = event.dataTransfer.files;
+            currentFile = file;
+            previewImage(file);
+        }
+    });
+
+    imageInput.addEventListener('change', () => {
+        currentFile = imageInput.files[0] || null;
+        if (currentFile) {
+            previewImage(currentFile);
+        }
+    });
+
+    function previewImage(file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            previewImg.src = event.target.result;
+            filePreview.classList.add('show');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    uploadForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        analyze();
+    });
+
+    clearBtn.addEventListener('click', () => {
+        currentFile = null;
+        imageInput.value = '';
+        filePreview.classList.remove('show');
+        resultCard.classList.add('hidden');
+        manualCard.classList.add('hidden');
+        jsonCard.classList.add('hidden');
+        metricGrid.innerHTML = '';
+        statusLine.textContent = '';
+        matchHint.textContent = '';
+        resultJson.textContent = '';
+    });
+
+    manualAnalyzeBtn.addEventListener('click', () => {
+        if (!manualWetlandSelect.value) {
+            alert('Choose a wetland first.');
+            return;
+        }
+        analyze(manualWetlandSelect.value);
+    });
+})();
+</script>
+{% endblock %}

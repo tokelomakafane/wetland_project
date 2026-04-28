@@ -6,6 +6,9 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('mapping.urls')),
+    path('drone/', include('drone.urls')),
+    path('', include('wetlands.urls')),
+    path('', include('timelapse.urls')),
 ]
 
 if settings.DEBUG:

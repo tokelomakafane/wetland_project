@@ -182,117 +182,43 @@
 
 <script>
 (function() {
-    // ── Simulated alert data ──
-    const alerts = [
-        {
-            id: 1, severity: 'critical', unread: true,
-            title: 'Severe erosion detected at Khubelu Wetland',
-            desc: 'Satellite imagery from March 6, 2026 shows a new gully formation (approx. 120m length) on the eastern bank of Khubelu Wetland. Erosion rate has increased 3x compared to the previous quarter. Immediate field inspection recommended.',
-            site: 'Khubelu Wetland', district: 'Mokhotlong',
-            category: 'Erosion', source: 'Sentinel-2 Change Detection',
-            time: '2 hours ago', date: 'March 10, 2026',
-            icon: '🏜️'
-        },
-        {
-            id: 2, severity: 'critical', unread: true,
-            title: 'Oxbow Wetland: Livestock damage exceeds threshold',
-            desc: 'Trampling damage index has exceeded the critical threshold of 0.8 (current: 0.93). Over 60% of the riparian buffer zone shows signs of heavy livestock impact. Drone survey from March 8 confirms bare soil exposure across the northern segment.',
-            site: 'Oxbow Wetland', district: 'Mokhotlong',
-            category: 'Animal Trampling', source: 'Drone Survey + NDVI Analysis',
-            time: '6 hours ago', date: 'March 10, 2026',
-            icon: '🐄'
-        },
-        {
-            id: 3, severity: 'critical', unread: true,
-            title: 'Leribe Marsh: Complete dry-out imminent',
-            desc: 'Water level sensors report 94% decline from seasonal average. NDVI dropped to 0.15 indicating near-complete vegetation loss. At current rate the wetland will be fully dry within 2 weeks. Emergency water supplementation should be considered.',
-            site: 'Leribe Lowland Marsh', district: 'Leribe',
-            category: 'Water Level', source: 'IoT Water Sensor + Sentinel-2',
-            time: '1 day ago', date: 'March 9, 2026',
-            icon: '💧'
-        },
-        {
-            id: 4, severity: 'warning', unread: true,
-            title: 'Bokong Reserve: Temperature anomaly detected',
-            desc: 'Land surface temperature in the Bokong wetland area is 4.2°C above the 10-year average for this period. Increased evapotranspiration is reducing open water surface area. Water body has shrunk by approximately 30% since January.',
-            site: 'Bokong Nature Reserve', district: 'Thaba-Tseka',
-            category: 'Temperature', source: 'MODIS LST + Landsat Thermal',
-            time: '1 day ago', date: 'March 9, 2026',
-            icon: '🌡️'
-        },
-        {
-            id: 5, severity: 'warning', unread: true,
-            title: "Mantsonyane Wetland boundary contraction",
-            desc: "Automated shape analysis shows the wetland perimeter has contracted by an additional 8% this quarter (40% total since 2020). Western edge is receding at 2.1m/month. The functional wetland area is now below the minimum viable threshold for the resident crane population.",
-            site: 'Mantsonyane Wetland', district: 'Thaba-Tseka',
-            category: 'Shape Change', source: 'GEE Boundary Tracking',
-            time: '2 days ago', date: 'March 8, 2026',
-            icon: '📐'
-        },
-        {
-            id: 6, severity: 'warning', unread: false,
-            title: "Qacha's Nek: Invasive Phragmites spreading",
-            desc: "Phragmites australis coverage has expanded from 12% to 23% of the wetland area over the past 6 months. Native sedge species (Carex cognata) are being displaced. Biodiversity index dropped 45%. Community volunteers have been notified for a removal campaign.",
-            site: "Qacha's Nek Wetland", district: "Qacha's Nek",
-            category: 'Invasive Species', source: 'Field Report + Spectral Analysis',
-            time: '3 days ago', date: 'March 7, 2026',
-            icon: '🌿'
-        },
-        {
-            id: 7, severity: 'info', unread: false,
-            title: "Ts'akholo conservation programme: Positive trend",
-            desc: "NDVI has increased by 0.12 since the community conservation programme began fencing the wetland perimeter in 2023. Vegetation recovery is on track. Water quality samples from February show improved clarity and reduced sediment load.",
-            site: "Ts'akholo Wetland", district: 'Mafeteng',
-            category: 'Recovery', source: 'Community Report + NDVI Trend',
-            time: '4 days ago', date: 'March 6, 2026',
-            icon: '📈'
-        },
-        {
-            id: 8, severity: 'info', unread: false,
-            title: "New community observation submitted: Semonkong",
-            desc: "A local community member reported healthy water flow and bird nesting activity at the Semonkong Marshlands. Photos uploaded show good vegetation cover and no visible degradation. Report has been verified by the field coordinator.",
-            site: 'Semonkong Marshlands', district: 'Maseru',
-            category: 'Community Report', source: 'Mobile App Submission',
-            time: '5 days ago', date: 'March 5, 2026',
-            icon: '👥'
-        },
-        {
-            id: 9, severity: 'resolved', unread: false,
-            title: "Lets'eng-la-Letsie: Erosion repair completed",
-            desc: "The gabion installation along the south-eastern inlet of Lets'eng-la-Letsie has been completed. Post-repair monitoring shows stabilised banks and reduced sediment inflow. Follow-up vegetation planting scheduled for April.",
-            site: "Lets'eng-la-Letsie", district: "Mohale's Hoek",
-            category: 'Erosion (Resolved)', source: 'Field Team Report',
-            time: '1 week ago', date: 'March 3, 2026',
-            icon: '✅'
-        },
-        {
-            id: 10, severity: 'resolved', unread: false,
-            title: 'SNP Alpine Wetland: Fire risk cleared',
-            desc: 'The wildfire risk alert for the SNP Alpine Wetland has been downgraded after recent rainfall (42mm over 3 days). Fuel moisture content is now above safety threshold. Monitoring will continue on a weekly basis.',
-            site: 'SNP Alpine Wetland', district: "Qacha's Nek",
-            category: 'Fire Risk (Resolved)', source: 'Weather Station + FIRMS',
-            time: '1 week ago', date: 'March 2, 2026',
-            icon: '✅'
-        },
-        {
-            id: 11, severity: 'warning', unread: false,
-            title: 'Scheduled drone survey overdue: Khubelu',
-            desc: 'The bi-monthly drone survey for Khubelu Wetland was due on March 1 but has not been completed. Please coordinate with the Mokhotlong field office to reschedule. Previous surveys flagged active erosion requiring close monitoring.',
-            site: 'Khubelu Wetland', district: 'Mokhotlong',
-            category: 'System', source: 'Survey Scheduler',
-            time: '1 week ago', date: 'March 2, 2026',
-            icon: '🛩️'
-        },
-        {
-            id: 12, severity: 'info', unread: false,
-            title: 'Monthly classification model refresh completed',
-            desc: 'The Random Forest wetland classification model has been refreshed with February 2026 Sentinel-2 imagery. Overall accuracy: 94.8%, Kappa: 0.891. Minor boundary adjustments detected at 3 sites. Full report available in the dashboard.',
-            site: 'System-wide', district: 'All',
-            category: 'System', source: 'Automated Pipeline',
-            time: '1 week ago', date: 'March 1, 2026',
-            icon: '🤖'
+    const alerts = [];
+
+    function iconForAlert(alert) {
+        const cat = (alert.category || '').toLowerCase();
+        if (cat.includes('ndvi')) return '🌿';
+        if (cat.includes('lst') || cat.includes('temperature')) return '🌡️';
+        if (cat.includes('bsi') || cat.includes('erosion')) return '🏜️';
+        if (cat.includes('ai')) return '🤖';
+        if (alert.severity === 'critical') return '🚨';
+        if (alert.severity === 'warning') return '⚠️';
+        if (alert.severity === 'resolved') return '✅';
+        return 'ℹ️';
+    }
+
+    async function loadAlerts() {
+        try {
+            const response = await fetch("{% url 'mapping:early_warning_alerts' %}");
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to load early warning alerts');
+            }
+
+            alerts.splice(0, alerts.length);
+            (data.alerts || []).forEach((item) => {
+                alerts.push({
+                    ...item,
+                    unread: item.unread !== false,
+                    icon: iconForAlert(item),
+                });
+            });
+            applyFilters();
+        } catch (error) {
+            const listEl = document.getElementById('alertList');
+            listEl.innerHTML = `<div style="text-align:center;padding:40px;color:#b71c1c;font-size:13px;">${error.message}</div>`;
+            updateSummary([]);
         }
-    ];
+    }
 
     const severityConfig = {
         critical: { label: 'Critical', tagCls: 'tag-critical', iconCls: 'icon-critical' },
@@ -438,7 +364,7 @@
     document.getElementById('alertSearch').addEventListener('input', applyFilters);
 
     // Initial render
-    applyFilters();
+    loadAlerts();
 })();
 </script>
 {% endblock %}
