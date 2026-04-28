@@ -11,6 +11,7 @@ from django.db import models
 from django.urls import reverse
 
 from .ee_utils import initialize_ee
+from .models import Wetland
 from timelapse.tasks import start_timelapse_job
 
 
@@ -82,6 +83,13 @@ def monitor_view(request):
 
 def alerts_view(request):
     return render(request, 'mapping/alerts.html', {'active_page': 'alerts'})
+
+
+def api_early_warning_alerts(request):
+    """Compatibility wrapper that delegates to the dedicated early_warning app."""
+    from early_warning.views import api_early_warning_alerts as impl
+
+    return impl(request)
 
 
 def community_view(request):

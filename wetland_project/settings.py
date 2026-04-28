@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     # 'django.contrib.gis',  # GeoDjango (commented out - using JSON geometry instead)
     'mapping',
     'drone',
+    'early_warning',
     'wetlands',
     'timelapse',
 ]

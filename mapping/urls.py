@@ -12,6 +12,7 @@ urlpatterns = [
     path('alerts/', views.alerts_view, name='alerts'),
     path('community/', views.community_view, name='community'),
     path('users/', views.users_view, name='users'),
+    path('api/alerts/early-warning/', views.api_early_warning_alerts, name='early_warning_alerts'),
     path('api/ee-tiles/', views.ee_tile_url, name='ee_tiles'),
     path('api/wetland-stats/', views.wetland_stats, name='wetland_stats'),
     path('api/sample-sites/', views.sample_sites, name='sample_sites'),
