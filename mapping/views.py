@@ -92,6 +92,13 @@ def api_early_warning_alerts(request):
     return impl(request)
 
 
+def api_mark_early_warning_alert_read(request):
+    """Compatibility wrapper that delegates alert read-state persistence."""
+    from early_warning.views import mark_early_warning_alert_read as impl
+
+    return impl(request)
+
+
 def community_view(request):
     return render(request, 'mapping/community.html', {'active_page': 'community'})
 

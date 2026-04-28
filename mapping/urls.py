@@ -13,6 +13,7 @@ urlpatterns = [
     path('community/', views.community_view, name='community'),
     path('users/', views.users_view, name='users'),
     path('api/alerts/early-warning/', views.api_early_warning_alerts, name='early_warning_alerts'),
+    path('api/alerts/early-warning/read/', views.api_mark_early_warning_alert_read, name='mark_early_warning_alert_read'),
     path('api/ee-tiles/', views.ee_tile_url, name='ee_tiles'),
     path('api/wetland-stats/', views.wetland_stats, name='wetland_stats'),
     path('api/sample-sites/', views.sample_sites, name='sample_sites'),
