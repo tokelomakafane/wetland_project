@@ -5,6 +5,7 @@ from pathlib import Path
 from django.http import JsonResponse
 from django.http import FileResponse
 from django.shortcuts import render, redirect
+from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
 from django import forms as django_forms
 from django.db import models
@@ -67,9 +68,23 @@ def index(request):
 
 def login_view(request):
     """Render simulated login page; POST redirects to dashboard."""
+    error = None
     if request.method == 'POST':
-        return redirect('mapping:dashboard')
-    return render(request, 'mapping/login.html')
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('mapping:dashboard')
+        else:
+            error = 'Invalid username or password'
+    return render(request, 'mapping/login.html', {'error': error})
+
+
+def logout_view(request):
+    """Log out the current user and redirect to login."""
+    logout(request)
+    return redirect('mapping:login')
 
 
 def dashboard(request):
@@ -88,6 +103,13 @@ def alerts_view(request):
 def api_early_warning_alerts(request):
     """Compatibility wrapper that delegates to the dedicated early_warning app."""
     from early_warning.views import api_early_warning_alerts as impl
+
+    return impl(request)
+
+
+def api_mark_early_warning_alert_read(request):
+    """Compatibility wrapper that delegates alert read-state persistence."""
+    from early_warning.views import mark_early_warning_alert_read as impl
 
     return impl(request)
 
