@@ -3,11 +3,315 @@
 {% block title %}Community Inputs{% endblock %}
 {% block page_title %}Community Inputs{% endblock %}
 
+{% block extra_head %}
+<style>
+    .tl-page { display: flex; height: 100%; min-height: 0; }
+    .tl-map-wrap { flex: 1; min-height: 0; position: relative; }
+    .tl-map { width: 100%; height: 100%; }
+
+    .tl-panel {
+        width: 390px;
+        background: #fff;
+        border-left: 1px solid #e5e7eb;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .tl-section {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .tl-section h4 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .field label {
+        font-size: 11px;
+        color: #666;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+    }
+
+    .field select {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 7px 9px;
+        font-size: 13px;
+        width: 100%;
+    }
+
+    .field textarea {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 13px;
+        width: 100%;
+        min-height: 90px;
+        resize: vertical;
+    }
+
+    .submit-btn {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        background: #0a84ff;
+        color: #fff;
+        font-weight: 700;
+        padding: 10px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
+
+    .submit-btn:hover { background: #086dd2; }
+    .submit-btn:disabled { background: #9ca3af; cursor: default; }
+
+    .status-box {
+        margin-top: 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px;
+        background: #fafafa;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .status-box.error {
+        border-color: #fecaca;
+        background: #fef2f2;
+        color: #991b1b;
+    }
+
+    .status-box.success {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="placeholder-page">
-    <div class="placeholder-icon">&#128101;</div>
-    <h2>Community Inputs</h2>
-    <p>Collect field reports, local knowledge, and observations from communities living near Lesotho's wetlands.</p>
-    <span class="coming-soon">Coming Soon</span>
+<div class="tl-page">
+    <div class="tl-map-wrap">
+        <div id="timelapseMap" class="tl-map"></div>
+    </div>
+
+    <aside class="tl-panel">
+        <section class="tl-section">
+            <h4>Wetland Community Input</h4>
+            <div class="field">
+                <label for="wetlandSelect">Wetland</label>
+                <select id="wetlandSelect"></select>
+            </div>
+
+            <div class="field" style="margin-top: 10px;">
+                <label for="observationSelect">Wetland Observation</label>
+                <select id="observationSelect">
+                    <option value="">Choose observation</option>
+                    <option value="grazing">Grazing</option>
+                    <option value="erosion">Erosion</option>
+                    <option value="invasive_species">Invasive species</option>
+                </select>
+            </div>
+
+            <div class="field" style="margin-top: 10px;">
+                <label for="severitySelect">Alert Severity</label>
+                <select id="severitySelect">
+                    <option value="">Choose severity</option>
+                    <option value="critical">critical</option>
+                    <option value="warning">warning</option>
+                    <option value="info">info</option>
+                    <option value="resolved">resolved</option>
+                </select>
+            </div>
+
+            <div class="field" style="margin-top: 10px;">
+                <label for="commentsInput">Comments</label>
+                <textarea id="commentsInput" placeholder="Describe the observed wetland condition..."></textarea>
+            </div>
+
+            <button id="submitCommunityInputBtn" class="submit-btn">Submit Community Input</button>
+            <div id="communityInputStatus" class="status-box" style="display:none;"></div>
+        </section>
+    </aside>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const geojson = JSON.parse('{{ wetlands_geojson|escapejs }}');
+
+    const map = L.map('timelapseMap', { center: [-29.6, 28.2], zoom: 8 });
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google',
+        maxZoom: 20
+    }).addTo(map);
+
+    const wetlandSelect = document.getElementById('wetlandSelect');
+    const observationSelect = document.getElementById('observationSelect');
+    const severitySelect = document.getElementById('severitySelect');
+    const commentsInput = document.getElementById('commentsInput');
+    const submitBtn = document.getElementById('submitCommunityInputBtn');
+    const statusBox = document.getElementById('communityInputStatus');
+
+    function getCsrfToken() {
+        const cookie = document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith('csrftoken='));
+        return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+    }
+
+    function setStatus(message, type) {
+        statusBox.textContent = message;
+        statusBox.className = 'status-box';
+        if (type) {
+            statusBox.classList.add(type);
+        }
+        statusBox.style.display = 'block';
+    }
+
+    function buildWetlandOptions() {
+        const features = geojson.features || [];
+        wetlandSelect.innerHTML = '<option value="">Choose wetland</option>';
+
+        features.forEach(feature => {
+            const props = feature.properties || {};
+            const opt = document.createElement('option');
+            opt.value = props.id;
+            opt.textContent = props.name + (props.village ? ' - ' + props.village : '');
+            wetlandSelect.appendChild(opt);
+        });
+
+        if (features.length) {
+            wetlandSelect.value = String(features[0].properties.id);
+        }
+    }
+
+    L.geoJSON(geojson, {
+        style: { color: '#0a84ff', weight: 2, fillOpacity: 0.08 },
+        onEachFeature: function(feature, layer) {
+            const p = feature.properties || {};
+            layer.bindPopup('<strong>' + (p.name || 'Wetland') + '</strong><br>Area: ' + (p.area_ha || 'N/A') + ' ha');
+            layer.on('click', function() {
+                wetlandSelect.value = String(p.id || '');
+                map.eachLayer(function(lyr) {
+                    if (lyr.feature && lyr.feature.properties) {
+                        const isMatch = Number(lyr.feature.properties.id) === Number(p.id);
+                        lyr.setStyle({
+                            color: isMatch ? '#14b8a6' : '#0a84ff',
+                            weight: isMatch ? 3 : 2,
+                            fillOpacity: isMatch ? 0.12 : 0.08,
+                        });
+                    }
+                });
+                map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+            });
+        }
+    }).addTo(map);
+
+    wetlandSelect.addEventListener('change', function() {
+        const selected = Number(wetlandSelect.value);
+        if (!selected) {
+            return;
+        }
+        map.eachLayer(function(layer) {
+            if (layer.feature && layer.feature.properties) {
+                const isMatch = Number(layer.feature.properties.id) === selected;
+                layer.setStyle({
+                    color: isMatch ? '#14b8a6' : '#0a84ff',
+                    weight: isMatch ? 3 : 2,
+                    fillOpacity: isMatch ? 0.12 : 0.08,
+                });
+                if (isMatch) {
+                    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+                }
+            }
+        });
+    });
+
+    submitBtn.addEventListener('click', function() {
+        const payload = {
+            wetland_id: Number(wetlandSelect.value),
+            observation: observationSelect.value,
+            severity: severitySelect.value,
+            comments: commentsInput.value.trim(),
+        };
+
+        if (!payload.wetland_id) {
+            setStatus('Please choose a wetland.', 'error');
+            return;
+        }
+        if (!payload.observation) {
+            setStatus('Please choose a wetland observation.', 'error');
+            return;
+        }
+        if (!payload.severity) {
+            setStatus('Please choose alert severity.', 'error');
+            return;
+        }
+        if (!payload.comments) {
+            setStatus('Please provide comments.', 'error');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        setStatus('Saving community input...', null);
+
+        fetch('{% url "mapping:community_input_create" %}', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(payload),
+        })
+            .then(async r => {
+                const responseText = await r.text();
+                let data = {};
+                try {
+                    data = responseText ? JSON.parse(responseText) : {};
+                } catch (_err) {
+                    if (!r.ok) {
+                        const trimmed = (responseText || '').slice(0, 120).replace(/\s+/g, ' ').trim();
+                        if (r.status === 403) {
+                            throw new Error('Request blocked (CSRF). Please refresh the page and try again.');
+                        }
+                        throw new Error('Unexpected server response (' + r.status + '). ' + (trimmed || 'No response body.'));
+                    }
+                }
+
+                if (!r.ok) {
+                    throw new Error(data.error || 'Could not save community input');
+                }
+                return data;
+            })
+            .then(() => {
+                commentsInput.value = '';
+                setStatus('Community input submitted successfully.', 'success');
+            })
+            .catch(err => {
+                setStatus(err.message, 'error');
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+            });
+    });
+
+    buildWetlandOptions();
+    if (geojson.features && geojson.features.length) {
+        map.fitBounds(L.geoJSON(geojson).getBounds(), { padding: [20, 20] });
+    }
+})();
+</script>
 {% endblock %}

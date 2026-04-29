@@ -155,6 +155,45 @@ class Wetland(models.Model):
         super().save(*args, **kwargs)
 
 
+class CommunityInput(models.Model):
+    """Field/community observations submitted for a wetland."""
+
+    OBSERVATION_CHOICES = [
+        ('grazing', 'Grazing'),
+        ('erosion', 'Erosion'),
+        ('invasive_species', 'Invasive species'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('critical', 'Critical'),
+        ('warning', 'Warning'),
+        ('info', 'Info'),
+        ('resolved', 'Resolved'),
+    ]
+
+    wetland = models.ForeignKey(
+        Wetland,
+        on_delete=models.CASCADE,
+        related_name='community_inputs',
+    )
+    observation = models.CharField(max_length=32, choices=OBSERVATION_CHOICES)
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
+    comments = models.TextField()
+    submitted_by = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['wetland', 'created_at']),
+            models.Index(fields=['severity']),
+        ]
+
+    def __str__(self):
+        return f"CommunityInput #{self.id} - {self.wetland.name} ({self.observation})"
+
+
 class WetlandMonitoringRecord(models.Model):
     """
     Time-series records of monitoring metrics per wetland.

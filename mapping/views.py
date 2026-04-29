@@ -6,14 +6,16 @@ from django.http import JsonResponse
 from django.http import FileResponse
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
 from django import forms as django_forms
 from django.db import models
 from django.urls import reverse
 
 from .ee_utils import initialize_ee
-from .models import Wetland
+from .models import CommunityInput, Wetland
 from timelapse.tasks import start_timelapse_job
+from wetlands.views import _seed_static_wetlands_into_db
 
 
 def _ee_json_error(exc):
@@ -114,8 +116,205 @@ def api_mark_early_warning_alert_read(request):
     return impl(request)
 
 
+@ensure_csrf_cookie
 def community_view(request):
-    return render(request, 'mapping/community.html', {'active_page': 'community'})
+    _seed_static_wetlands_into_db()
+
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name')
+
+    features = []
+    for wetland in wetlands:
+        geometry = wetland.geometry
+        if isinstance(geometry, str):
+            try:
+                geometry = json.loads(geometry)
+            except json.JSONDecodeError:
+                continue
+        if geometry.get('type') == 'Feature':
+            geometry = geometry.get('geometry', {})
+        if geometry.get('type') not in ('Polygon', 'MultiPolygon'):
+            continue
+
+        features.append({
+            'type': 'Feature',
+            'geometry': geometry,
+            'properties': {
+                'id': wetland.id,
+                'name': wetland.name,
+                'village': wetland.village,
+                'area_ha': wetland.area_ha,
+            },
+        })
+
+    context = {
+        'active_page': 'community',
+        'wetlands_geojson': json.dumps({'type': 'FeatureCollection', 'features': features}),
+    }
+    return render(request, 'mapping/community.html', context)
+
+
+def api_create_community_input(request):
+    """Persist a community input report for a selected wetland."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+
+    try:
+        wetland_id = int(payload.get('wetland_id'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+
+    observation = (payload.get('observation') or '').strip()
+    severity = (payload.get('severity') or '').strip()
+    comments = (payload.get('comments') or '').strip()
+
+    valid_observations = {choice[0] for choice in CommunityInput.OBSERVATION_CHOICES}
+    valid_severities = {choice[0] for choice in CommunityInput.SEVERITY_CHOICES}
+
+    if observation not in valid_observations:
+        return JsonResponse({'error': 'Invalid observation value'}, status=400)
+    if severity not in valid_severities:
+        return JsonResponse({'error': 'Invalid severity value'}, status=400)
+    if not comments:
+        return JsonResponse({'error': 'Comments are required'}, status=400)
+
+    try:
+        wetland = Wetland.objects.get(pk=wetland_id, is_current=True)
+    except Wetland.DoesNotExist:
+        return JsonResponse({'error': 'Wetland not found'}, status=404)
+
+    submitted_by = ''
+    if getattr(request, 'user', None) and request.user.is_authenticated:
+        submitted_by = request.user.get_full_name() or request.user.username
+
+    entry = CommunityInput.objects.create(
+        wetland=wetland,
+        observation=observation,
+        severity=severity,
+        comments=comments,
+        submitted_by=submitted_by,
+    )
+
+    return JsonResponse({
+        'id': entry.id,
+        'message': 'Community input saved successfully',
+        'wetland': wetland.name,
+        'observation': entry.observation,
+        'severity': entry.severity,
+        'comments': entry.comments,
+        'created_at': entry.created_at.isoformat(),
+    }, status=201)
+
+
+def _serialize_community_input(entry):
+    return {
+        'id': entry.id,
+        'wetland_id': entry.wetland_id,
+        'wetland': entry.wetland.name,
+        'observation': entry.observation,
+        'severity': entry.severity,
+        'comments': entry.comments,
+        'submitted_by': entry.submitted_by,
+        'created_at': entry.created_at.isoformat(),
+        'updated_at': entry.updated_at.isoformat(),
+    }
+
+
+def api_list_community_inputs(request):
+    """List community inputs, optionally filtered by wetland_id."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+
+    queryset = CommunityInput.objects.select_related('wetland').order_by('-created_at')
+    wetland_id = request.GET.get('wetland_id')
+    if wetland_id:
+        try:
+            queryset = queryset.filter(wetland_id=int(wetland_id))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+
+    return JsonResponse({'results': [_serialize_community_input(item) for item in queryset]})
+
+
+def api_get_community_input(request, input_id):
+    """Retrieve a single community input by id."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.select_related('wetland').get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    return JsonResponse(_serialize_community_input(entry))
+
+
+def api_update_community_input(request, input_id):
+    """Update an existing community input."""
+    if request.method not in ('PUT', 'PATCH'):
+        return JsonResponse({'error': 'PUT or PATCH required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.select_related('wetland').get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+
+    if 'observation' in payload:
+        observation = (payload.get('observation') or '').strip()
+        valid_observations = {choice[0] for choice in CommunityInput.OBSERVATION_CHOICES}
+        if observation not in valid_observations:
+            return JsonResponse({'error': 'Invalid observation value'}, status=400)
+        entry.observation = observation
+
+    if 'severity' in payload:
+        severity = (payload.get('severity') or '').strip()
+        valid_severities = {choice[0] for choice in CommunityInput.SEVERITY_CHOICES}
+        if severity not in valid_severities:
+            return JsonResponse({'error': 'Invalid severity value'}, status=400)
+        entry.severity = severity
+
+    if 'comments' in payload:
+        comments = (payload.get('comments') or '').strip()
+        if not comments:
+            return JsonResponse({'error': 'Comments are required'}, status=400)
+        entry.comments = comments
+
+    if 'wetland_id' in payload:
+        try:
+            wetland_id = int(payload.get('wetland_id'))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+        try:
+            wetland = Wetland.objects.get(pk=wetland_id, is_current=True)
+        except Wetland.DoesNotExist:
+            return JsonResponse({'error': 'Wetland not found'}, status=404)
+        entry.wetland = wetland
+
+    entry.save()
+    return JsonResponse(_serialize_community_input(entry))
+
+
+def api_delete_community_input(request, input_id):
+    """Delete an existing community input."""
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    entry.delete()
+    return JsonResponse({'message': 'Community input deleted'})
 
 
 def users_view(request):
