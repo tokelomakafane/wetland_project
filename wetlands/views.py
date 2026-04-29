@@ -295,6 +295,149 @@ def _parse_upload_file(file_obj, file_format):
     raise ValueError(f'Unsupported format: {file_format}')
 
 
+def _calculate_health_metrics(geometry, year=None):
+    """
+    Calculate MNDWI, NDVI, NDMI health metrics from Earth Engine.
+    Returns dict with metrics and overall health status.
+    """
+    import ee
+    from datetime import datetime
+    
+    if year is None:
+        year = datetime.now().year
+    
+    try:
+        initialize_ee()
+        
+        # Parse geometry
+        if isinstance(geometry, str):
+            geometry = json.loads(geometry)
+        if geometry.get('type') == 'Feature':
+            geometry = geometry.get('geometry', {})
+        
+        ee_geometry = ee.Geometry(geometry)
+        
+        # Get Sentinel-2 imagery for the year
+        start_date = ee.Date.fromYMD(year, 1, 1)
+        end_date = ee.Date.fromYMD(year, 12, 31)
+        
+        image = (
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterDate(start_date, end_date)
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+            .filterBounds(ee_geometry)
+            .median()
+            .clip(ee_geometry)
+        )
+        
+        # Calculate the three key health metrics
+        mndwi = image.normalizedDifference(['B3', 'B11']).rename('MNDWI')
+        ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI')
+        ndmi = image.normalizedDifference(['B8', 'B11']).rename('NDMI')
+        
+        # Extract mean values
+        metrics = ee.Image.cat([mndwi, ndvi, ndmi]).reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=ee_geometry,
+            scale=20,
+            bestEffort=True,
+            maxPixels=1e10,
+            tileScale=4,
+        ).getInfo() or {}
+        
+        mndwi_val = metrics.get('MNDWI', None)
+        ndvi_val = metrics.get('NDVI', None)
+        ndmi_val = metrics.get('NDMI', None)
+        
+        # Determine health status based on metric thresholds
+        health_status = _assess_health_status(mndwi_val, ndvi_val, ndmi_val)
+        
+        return {
+            'mndwi': round(mndwi_val, 4) if mndwi_val is not None else None,
+            'ndvi': round(ndvi_val, 4) if ndvi_val is not None else None,
+            'ndmi': round(ndmi_val, 4) if ndmi_val is not None else None,
+            'status': health_status['status'],
+            'description': health_status['description'],
+            'year': year,
+        }
+    except Exception as e:
+        return {
+            'mndwi': None,
+            'ndvi': None,
+            'ndmi': None,
+            'status': 'error',
+            'description': f'Could not calculate metrics: {str(e)}',
+            'year': year,
+        }
+
+
+def _assess_health_status(mndwi, ndvi, ndmi):
+    """
+    Assess wetland health status based on key metrics.
+    MNDWI > 0.3: strong water presence
+    NDVI > 0.4: healthy vegetation
+    NDMI > 0.3: good moisture condition
+    """
+    if all(v is None for v in [mndwi, ndvi, ndmi]):
+        return {
+            'status': 'unknown',
+            'description': 'Insufficient data to assess health'
+        }
+    
+    water_score = 0
+    veg_score = 0
+    moisture_score = 0
+    total_metrics = 0
+    
+    if mndwi is not None:
+        total_metrics += 1
+        if mndwi > 0.3:
+            water_score = 2
+        elif mndwi > 0.1:
+            water_score = 1
+        else:
+            water_score = 0
+    
+    if ndvi is not None:
+        total_metrics += 1
+        if ndvi > 0.4:
+            veg_score = 2
+        elif ndvi > 0.2:
+            veg_score = 1
+        else:
+            veg_score = 0
+    
+    if ndmi is not None:
+        total_metrics += 1
+        if ndmi > 0.3:
+            moisture_score = 2
+        elif ndmi > 0.1:
+            moisture_score = 1
+        else:
+            moisture_score = 0
+    
+    if total_metrics == 0:
+        return {'status': 'unknown', 'description': 'No valid metrics'}
+    
+    avg_score = (water_score + veg_score + moisture_score) / total_metrics
+    
+    if avg_score >= 1.7:
+        return {
+            'status': 'healthy',
+            'description': 'Wetland is in good health with adequate water, vegetation, and moisture'
+        }
+    elif avg_score >= 1.0:
+        return {
+            'status': 'fair',
+            'description': 'Wetland health is fair; some metrics are below optimal levels'
+        }
+    else:
+        return {
+            'status': 'degraded',
+            'description': 'Wetland is degraded; multiple health indicators are low'
+        }
+
+
 def monitor_wetland(request, pk):
     """Monitor one wetland and show stored records."""
     _seed_static_wetlands_into_db()
@@ -321,12 +464,18 @@ def monitor_wetland(request, pk):
         },
     }
 
+    # Calculate current year health metrics
+    from datetime import datetime
+    current_year = datetime.now().year
+    health_metrics = _calculate_health_metrics(wetland.geometry, year=current_year)
+
     context = {
         'wetland': wetland,
         'latest_record': latest_record,
         'records': records,
         'geojson': json.dumps(geojson),
         'active_page': 'monitor_wetland',
+        'health_metrics': health_metrics,
     }
     return render(request, 'mapping/monitor_wetland.html', context)
 
@@ -510,6 +659,28 @@ def api_wetland_erosion_data(request, pk):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+def api_wetland_health_metrics(request, pk):
+    """API: calculate health metrics (MNDWI, NDVI, NDMI) for a specific year."""
+    _seed_static_wetlands_into_db()
+
+    try:
+        wetland = Wetland.objects.get(pk=pk, is_current=True)
+    except Wetland.DoesNotExist:
+        return JsonResponse({'error': 'Wetland not found'}, status=404)
+
+    year = request.GET.get('year')
+    try:
+        year = int(year) if year else 2026
+        if year < 2015 or year > 2030:
+            return JsonResponse({'error': 'Year must be between 2015 and 2030'}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
+
+    # Use cached calculation function
+    metrics = _calculate_health_metrics(wetland.geometry, year=year)
+    return JsonResponse(metrics)
 
 
 def api_wetland_comparison(request):

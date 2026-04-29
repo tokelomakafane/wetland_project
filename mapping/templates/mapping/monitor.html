@@ -29,8 +29,8 @@
     }
     .summary-badge .count { font-size: 22px; font-weight: 700; display: block; }
     .badge-healthy { background: #e8f5e9; color: #2e7d32; }
-    .badge-critical { background: #fff3e0; color: #e65100; }
-    .badge-severe { background: #ffebee; color: #c62828; }
+    .badge-fair { background: #fff3e0; color: #e65100; }
+    .badge-degraded { background: #ffebee; color: #c62828; }
 
     .site-list { list-style: none; padding: 0; margin: 0; }
     .site-item {
@@ -47,8 +47,8 @@
         border-radius: 12px; text-transform: uppercase; letter-spacing: 0.5px;
     }
     .status-healthy { background: #c8e6c9; color: #1b5e20; }
-    .status-critical { background: #ffe0b2; color: #bf360c; }
-    .status-severe { background: #ffcdd2; color: #b71c1c; }
+    .status-fair { background: #ffe0b2; color: #bf360c; }
+    .status-degraded { background: #ffcdd2; color: #b71c1c; }
     .threat-tag {
         font-size: 10px; padding: 2px 8px; border-radius: 4px;
         background: #f0f0f0; color: #555;
@@ -100,13 +100,13 @@
         </div>
         <div class="summary-row">
             <div class="summary-badge badge-healthy">
-                <span class="count" id="countHealthy">0</span> Healthy
+                <span class="count" id="countHealthy">-</span> Healthy
             </div>
-            <div class="summary-badge badge-critical">
-                <span class="count" id="countCritical">0</span> Critical
+                <div class="summary-badge badge-fair">
+                    <span class="count" id="countCritical">-</span> Fair
             </div>
-            <div class="summary-badge badge-severe">
-                <span class="count" id="countSevere">0</span> Severe
+                <div class="summary-badge badge-degraded">
+                    <span class="count" id="countSevere">-</span> Degraded
             </div>
         </div>
         <ul class="site-list" id="siteList"></ul>
@@ -116,118 +116,100 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
-    // ── Simulated wetland monitoring data ──
+    // ── Demo wetland monitoring data with health metrics ──
     const wetlands = [
         {
             id: 1, name: "Lets'eng-la-Letsie",
             district: "Mohale's Hoek",
             lat: -30.3085, lng: 28.1646,
             status: "healthy",
-            ndvi: 0.72, waterLevel: "Normal", area_ha: 124.5,
-            threat: null,
-            note: "Stable vegetation cover, water levels consistent with seasonal norms."
+            mndwi: 0.45, ndvi: 0.72, ndmi: 0.52, area_ha: 124.5,
+            description: "Stable vegetation cover, water levels consistent with seasonal norms."
         },
         {
             id: 2, name: "Khubelu Wetland",
             district: "Mokhotlong",
             lat: -29.2800, lng: 29.0600,
-            status: "critical",
-            ndvi: 0.38, waterLevel: "Declining", area_ha: 67.2,
-            threat: "erosion",
-            note: "Severe gully erosion on eastern bank from surface runoff. Sediment buildup visible."
+            status: "fair",
+            mndwi: 0.28, ndvi: 0.38, ndmi: 0.25, area_ha: 67.2,
+            description: "Water presence declining. Vegetation shows stress patterns."
         },
         {
             id: 3, name: "Semonkong Marshlands",
             district: "Maseru",
             lat: -29.8603, lng: 28.0648,
             status: "healthy",
-            ndvi: 0.65, waterLevel: "Normal", area_ha: 89.1,
-            threat: null,
-            note: "Good condition. Native sedge and grass species well established."
+            mndwi: 0.42, ndvi: 0.65, ndmi: 0.48, area_ha: 89.1,
+            description: "Good condition. Native sedge and grass species well established."
         },
         {
             id: 4, name: "Oxbow Wetland",
             district: "Mokhotlong",
             lat: -28.7636, lng: 28.6282,
-            status: "severe",
-            ndvi: 0.21, waterLevel: "Critical Low", area_ha: 45.8,
-            threat: "trampling",
-            note: "Heavy livestock trampling has destroyed bank vegetation. Cattle and sheep access unrestricted."
+            status: "degraded",
+            mndwi: 0.15, ndvi: 0.21, ndmi: 0.10, area_ha: 45.8,
+            description: "Heavy livestock trampling has destroyed bank vegetation. Water levels critical."
         },
         {
             id: 5, name: "Bokong Nature Reserve",
             district: "Thaba-Tseka",
             lat: -29.1500, lng: 28.7900,
-            status: "critical",
-            ndvi: 0.42, waterLevel: "Below Normal", area_ha: 156.3,
-            threat: "temperature",
-            note: "Rising temperatures causing accelerated evaporation. Water surface reduced by ~30%."
+            status: "fair",
+            mndwi: 0.32, ndvi: 0.42, ndmi: 0.30, area_ha: 156.3,
+            description: "Rising temperatures causing accelerated evaporation. Water surface reduced."
         },
         {
             id: 6, name: "Mantsonyane Wetland",
             district: "Thaba-Tseka",
             lat: -29.5354, lng: 28.2350,
-            status: "severe",
-            ndvi: 0.18, waterLevel: "Critical Low", area_ha: 34.7,
-            threat: "shape",
-            note: "Wetland boundary has contracted significantly. Original perimeter reduced by 40% since 2020."
+            status: "degraded",
+            mndwi: 0.12, ndvi: 0.18, ndmi: 0.08, area_ha: 34.7,
+            description: "Wetland boundary has contracted significantly. Original perimeter reduced by 40%."
         },
         {
             id: 7, name: "Ts'akholo Wetland",
             district: "Mafeteng",
             lat: -29.6687, lng: 27.9622,
             status: "healthy",
-            ndvi: 0.68, waterLevel: "Normal", area_ha: 72.4,
-            threat: null,
-            note: "Healthy condition. Community conservation programme active since 2018."
+            mndwi: 0.48, ndvi: 0.68, ndmi: 0.55, area_ha: 72.4,
+            description: "Healthy condition. Community conservation programme active since 2018."
         },
         {
             id: 8, name: "Qacha's Nek Wetland",
             district: "Qacha's Nek",
             lat: -30.0613, lng: 28.4723,
-            status: "critical",
-            ndvi: 0.35, waterLevel: "Declining", area_ha: 58.9,
-            threat: "species",
-            note: "Invasive species (Phragmites) displacing native wetland flora. Biodiversity index dropped 45%."
+            status: "fair",
+            mndwi: 0.24, ndvi: 0.35, ndmi: 0.22, area_ha: 58.9,
+            description: "Invasive species displacing native wetland flora. Biodiversity index dropped."
         },
         {
             id: 9, name: "Leribe Lowland Marsh",
             district: "Leribe",
             lat: -28.8866, lng: 27.9853,
-            status: "severe",
-            ndvi: 0.15, waterLevel: "Dry", area_ha: 28.3,
-            threat: "erosion",
-            note: "Topsoil completely eroded in central zone. Deep rill erosion from unmanaged drainage."
+            status: "degraded",
+            mndwi: 0.10, ndvi: 0.15, ndmi: 0.05, area_ha: 28.3,
+            description: "Topsoil completely eroded in central zone. Deep rill erosion from drainage."
         },
         {
             id: 10, name: "SNP Alpine Wetland",
             district: "Qacha's Nek",
             lat: -29.8686, lng: 29.0970,
             status: "healthy",
-            ndvi: 0.71, waterLevel: "Normal", area_ha: 203.6,
-            threat: null,
-            note: "Protected area. Alpine bog in excellent condition with high biodiversity."
+            mndwi: 0.50, ndvi: 0.71, ndmi: 0.58, area_ha: 203.6,
+            description: "Protected area. Alpine bog in excellent condition with high biodiversity."
         }
     ];
 
-    // ── Status colors ──
+    // ── Status colors and labels ──
     const statusColors = {
         healthy: '#2e7d32',
-        critical: '#e65100',
-        severe: '#c62828'
+        fair: '#e65100',
+        degraded: '#c62828'
     };
     const statusLabels = {
         healthy: 'Healthy',
-        critical: 'Critical',
-        severe: 'Severe'
-    };
-
-    const threatLabels = {
-        erosion: { label: 'Soil Erosion', icon: '🏜️', cls: 'threat-erosion' },
-        species: { label: 'Invasive Species', icon: '🌿', cls: 'threat-species' },
-        temperature: { label: 'High Temperature', icon: '🌡️', cls: 'threat-temperature' },
-        shape: { label: 'Changing Shape', icon: '📐', cls: 'threat-shape' },
-        trampling: { label: 'Animal Trampling', icon: '🐄', cls: 'threat-trampling' }
+        fair: 'Fair',
+        degraded: 'Degraded'
     };
 
     // ── Initialize map ──
@@ -254,30 +236,24 @@
             fillOpacity: 0.85
         }).addTo(map);
 
-        // Pulsing effect for severe
-        if (w.status === 'severe') {
+        // Pulsing effect for degraded
+        if (w.status === 'degraded') {
             marker.setStyle({ weight: 3, dashArray: '4 4' });
         }
 
-        // Popup
-        let threatHtml = '';
-        if (w.threat) {
-            const t = threatLabels[w.threat];
-            threatHtml = `<tr><td>Threat</td><td><span class="threat-label ${t.cls}">${t.icon} ${t.label}</span></td></tr>`;
-        }
-
+        // Popup with real metrics
         const popupContent = `
             <div class="wetland-popup">
                 <h4>${w.name}</h4>
                 <span class="popup-status status-${w.status}">${statusLabels[w.status]}</span>
                 <table>
                     <tr><td>District</td><td>${w.district}</td></tr>
-                    <tr><td>NDVI</td><td>${w.ndvi.toFixed(2)}</td></tr>
-                    <tr><td>Water Level</td><td>${w.waterLevel}</td></tr>
+                    <tr><td>MNDWI (Water)</td><td>${w.mndwi.toFixed(3)}</td></tr>
+                    <tr><td>NDVI (Veg)</td><td>${w.ndvi.toFixed(3)}</td></tr>
+                    <tr><td>NDMI (Moisture)</td><td>${w.ndmi.toFixed(3)}</td></tr>
                     <tr><td>Area</td><td>${w.area_ha} ha</td></tr>
-                    ${threatHtml}
                 </table>
-                <p style="margin-top:8px;font-size:11px;color:#555;line-height:1.4;">${w.note}</p>
+                <p style="margin-top:8px;font-size:11px;color:#555;line-height:1.4;">${w.description}</p>
             </div>
         `;
         marker.bindPopup(popupContent, { maxWidth: 280 });
@@ -291,19 +267,12 @@
         div.innerHTML = `
             <h4>Health Status</h4>
             <div><span class="legend-dot" style="background:#2e7d32"></span> Healthy</div>
-            <div><span class="legend-dot" style="background:#e65100"></span> Critical</div>
-            <div><span class="legend-dot" style="background:#c62828"></span> Severe</div>
+            <div><span class="legend-dot" style="background:#e65100"></span> Fair</div>
+            <div><span class="legend-dot" style="background:#c62828"></span> Degraded</div>
         `;
         return div;
     };
     legend.addTo(map);
-
-    // ── Summary counts ──
-    const counts = { healthy: 0, critical: 0, severe: 0 };
-    wetlands.forEach(w => counts[w.status]++);
-    document.getElementById('countHealthy').textContent = counts.healthy;
-    document.getElementById('countCritical').textContent = counts.critical;
-    document.getElementById('countSevere').textContent = counts.severe;
 
     // ── Side panel list ──
     const listEl = document.getElementById('siteList');
@@ -312,18 +281,11 @@
         li.className = 'site-item';
         li.dataset.id = w.id;
 
-        let threatTag = '';
-        if (w.threat) {
-            const t = threatLabels[w.threat];
-            threatTag = `<span class="threat-tag">${t.icon} ${t.label}</span>`;
-        }
-
         li.innerHTML = `
             <div class="site-name">${w.name}</div>
             <div class="site-district">${w.district} District</div>
             <div class="site-meta">
                 <span class="status-pill status-${w.status}">${statusLabels[w.status]}</span>
-                ${threatTag}
                 <span class="threat-tag">NDVI: ${w.ndvi.toFixed(2)}</span>
             </div>
         `;

@@ -286,6 +286,70 @@
                 {% endif %}
             </div>
 
+            <!-- Wetland Health Assessment -->
+            <div class="panel-section">
+                <h3><i class="fas fa-heart"></i> Wetland Health Assessment</h3>
+                <div id="healthMetricsContainer">
+                    {% if health_metrics %}
+                        <div id="healthStatusBox" style="background: {% if health_metrics.status == 'healthy' %}#e8f5e9{% elif health_metrics.status == 'fair' %}#fff8e1{% else %}#ffebee{% endif %}; border-left: 4px solid {% if health_metrics.status == 'healthy' %}#1a9641{% elif health_metrics.status == 'fair' %}#ff6f00{% else %}#d32f2f{% endif %}; padding: 12px; border-radius: 4px; margin-bottom: 12px;">
+                            <div style="font-size: 11px; color: #666; margin-bottom: 6px;">Status <span id="healthYear">({{ health_metrics.year }})</span></div>
+                            <div id="healthStatus" style="font-size: 18px; font-weight: bold; text-transform: uppercase; color: {% if health_metrics.status == 'healthy' %}#1a9641{% elif health_metrics.status == 'fair' %}#ff6f00{% else %}#d32f2f{% endif %};">
+                                {{ health_metrics.status }}
+                            </div>
+                            <div id="healthDescription" style="font-size: 10px; color: #666; margin-top: 4px;">{{ health_metrics.description }}</div>
+                        </div>
+
+                        <div class="status-card-grid">
+                            <div class="status-card blue">
+                                <div class="status-label">MNDWI (Water)</div>
+                                <div id="healthMNDWI" class="status-value">
+                                    {% if health_metrics.mndwi is not None %}
+                                        {{ health_metrics.mndwi }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div style="font-size: 9px; color: #999; margin-top: 2px;">Presence</div>
+                            </div>
+                            <div class="status-card green">
+                                <div class="status-label">NDVI (Vegetation)</div>
+                                <div id="healthNDVI" class="status-value">
+                                    {% if health_metrics.ndvi is not None %}
+                                        {{ health_metrics.ndvi }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div style="font-size: 9px; color: #999; margin-top: 2px;">Health</div>
+                            </div>
+                            <div class="status-card orange">
+                                <div class="status-label">NDMI (Moisture)</div>
+                                <div id="healthNDMI" class="status-value">
+                                    {% if health_metrics.ndmi is not None %}
+                                        {{ health_metrics.ndmi }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div style="font-size: 9px; color: #999; margin-top: 2px;">Condition</div>
+                            </div>
+                        </div>
+                    {% elif health_metrics.status == 'error' %}
+                        <div style="background: #ffebee; border-left: 4px solid #d32f2f; padding: 12px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #c62828;">
+                                <i class="fas fa-exclamation-circle"></i> {{ health_metrics.description }}
+                            </div>
+                        </div>
+                    {% else %}
+                        <div style="background: #f5f5f5; border-left: 4px solid #757575; padding: 12px; border-radius: 4px;">
+                            <div style="font-size: 11px; color: #666;">
+                                <i class="fas fa-spinner"></i> Calculating health metrics...
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <!-- Year Comparison -->
             <div class="panel-section">
                 <h3>Year Comparison</h3>
@@ -422,11 +486,9 @@
         }
 
         document.getElementById('yearSlider').addEventListener('input', function() {
-            document.getElementById('yearLabel').textContent = this.value;
-        });
-
-        document.getElementById('yearSlider').addEventListener('change', function() {
-            loadWetlandYear(this.value);
+            const year = this.value;
+            document.getElementById('yearLabel').textContent = year;
+            loadWetlandYear(year);
         });
 
         document.getElementById('predictBtn').addEventListener('click', function() {
@@ -484,6 +546,51 @@
         }
     }
 
+    function loadHealthMetrics(year) {
+        fetch(`/api/wetlands/${wetlandId}/health/?year=${year}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Health metrics error:', data.error);
+                    return;
+                }
+                updateHealthDisplay(data, year);
+            })
+            .catch(err => console.error('Error loading health metrics:', err));
+    }
+
+    function updateHealthDisplay(data, year) {
+        // Update year label
+        document.getElementById('healthYear').textContent = `(${year})`;
+
+        // Update status and description
+        const statusEl = document.getElementById('healthStatus');
+        const descEl = document.getElementById('healthDescription');
+        const boxEl = document.getElementById('healthStatusBox');
+
+        const statusMap = {
+            'healthy': { color: '#1a9641', bg: '#e8f5e9' },
+            'fair': { color: '#ff6f00', bg: '#fff8e1' },
+            'degraded': { color: '#d32f2f', bg: '#ffebee' },
+            'unknown': { color: '#757575', bg: '#f5f5f5' }
+        };
+
+        const colors = statusMap[data.status] || statusMap['unknown'];
+        statusEl.textContent = data.status.toUpperCase();
+        statusEl.style.color = colors.color;
+        descEl.textContent = data.description;
+        boxEl.style.background = colors.bg;
+        boxEl.style.borderLeftColor = colors.color;
+
+        // Update metric values
+        document.getElementById('healthMNDWI').textContent = 
+            data.mndwi !== null ? data.mndwi : 'N/A';
+        document.getElementById('healthNDVI').textContent = 
+            data.ndvi !== null ? data.ndvi : 'N/A';
+        document.getElementById('healthNDMI').textContent = 
+            data.ndmi !== null ? data.ndmi : 'N/A';
+    }
+
     function loadWetlandYear(year) {
         fetch(`/api/wetlands/${wetlandId}/erosion/?year=${year}`)
             .then(r => r.json())
@@ -494,6 +601,8 @@
                 }
                 setCurrentData(data);
                 document.getElementById('yearLabel').textContent = year;
+                // Also load health metrics for this year
+                loadHealthMetrics(year);
             })
             .catch(err => console.error('Error:', err));
     }
