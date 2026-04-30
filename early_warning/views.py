@@ -1,11 +1,11 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.utils import timezone
 
-from mapping.models import Wetland, WetlandMonitoringRecord
+from mapping.models import CommunityInput, Wetland, WetlandMonitoringRecord
 
 
 SESSION_READ_ALERTS_KEY = 'read_early_warning_alerts'
@@ -81,6 +81,75 @@ def _year_span_text(previous_year, current_year):
     if current_year:
         return f'in {int(current_year)}'
     return 'across the available records'
+
+
+_COMMUNITY_SEVERITY_SCORE = {'critical': 1.0, 'warning': 0.7, 'info': 0.3}
+
+_OBSERVATION_LABELS = {
+    'grazing': 'Grazing pressure',
+    'erosion': 'Active erosion',
+    'invasive_species': 'Invasive species',
+}
+
+
+def _relative_time_label(dt):
+    now = timezone.now()
+    delta = now - dt
+    if delta.days == 0:
+        hours = delta.seconds // 3600
+        return f'{hours}h ago' if hours > 0 else 'Just now'
+    if delta.days == 1:
+        return 'Yesterday'
+    if delta.days < 7:
+        return f'{delta.days} days ago'
+    if delta.days < 30:
+        weeks = delta.days // 7
+        return f'{weeks} week{"s" if weeks > 1 else ""} ago'
+    if delta.days < 365:
+        months = delta.days // 30
+        return f'{months} month{"s" if months > 1 else ""} ago'
+    years = delta.days // 365
+    return f'{years} year{"s" if years > 1 else ""} ago'
+
+
+def _community_input_alerts():
+    """Convert recent community field reports into early-warning alert dicts."""
+    cutoff = timezone.now() - timedelta(days=90)
+    entries = (
+        CommunityInput.objects
+        .select_related('wetland')
+        .filter(created_at__gte=cutoff)
+        .exclude(severity='resolved')
+        .order_by('-created_at')
+    )
+    alerts = []
+    for entry in entries:
+        obs_label = _OBSERVATION_LABELS.get(entry.observation, entry.get_observation_display())
+        submitter = entry.submitted_by or 'Anonymous'
+        alerts.append({
+            'severity': entry.severity,
+            'title': f'Field report: {obs_label} at {entry.wetland.name}',
+            'desc': (
+                f'{entry.comments} '
+                f'— Reported by {submitter} ({_relative_time_label(entry.created_at)}).'
+            ),
+            'wetland_id': entry.wetland_id,
+            'trigger_year': entry.id,
+            'site': entry.wetland.name,
+            'district': entry.wetland.village or 'Unknown',
+            'category': f'Community: {obs_label}',
+            'source': 'community_input',
+            'time': _relative_time_label(entry.created_at),
+            'date': entry.created_at.date().isoformat(),
+            'unread': True,
+            'score': _COMMUNITY_SEVERITY_SCORE.get(entry.severity, 0.3),
+            'thresholds': {
+                'observation': entry.observation,
+                'submitted_by': submitter,
+                'input_id': entry.id,
+            },
+        })
+    return alerts
 
 
 def _compose_composite_alert(wetland, current_record, metrics):
@@ -192,7 +261,8 @@ def _compose_composite_alert(wetland, current_record, metrics):
 
 
 def _build_early_warning_alerts(request=None):
-    alerts = []
+    # Community field reports come first — they represent ground-truth observations
+    alerts = _community_input_alerts()
 
     wetlands = Wetland.objects.filter(is_current=True)
     for wetland in wetlands:
@@ -312,8 +382,10 @@ def _build_early_warning_alerts(request=None):
             alerts.append(composite_alert)
 
     def _priority(alert):
-        order = {'critical': 0, 'warning': 1, 'info': 2, 'resolved': 3}
-        return (order.get(alert.get('severity', 'info'), 2), -(alert.get('score') or 0))
+        sev_order = {'critical': 0, 'warning': 1, 'info': 2, 'resolved': 3}
+        # Community field reports beat rule-based alerts at the same severity (0 < 1)
+        source_order = 0 if alert.get('source') == 'community_input' else 1
+        return (sev_order.get(alert.get('severity', 'info'), 2), source_order, -(alert.get('score') or 0))
 
     alerts.sort(key=_priority)
     for idx, alert in enumerate(alerts, 1):

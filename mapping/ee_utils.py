@@ -1,11 +1,21 @@
 """Earth Engine initialization helper."""
 import ee
+import json
 import logging
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 _initialized = False
 _initialization_failed = False
+
+
+def _read_service_account_email(key_path):
+    try:
+        with open(key_path, 'r', encoding='utf-8') as f:
+            return json.load(f).get('client_email', '')
+    except Exception as exc:
+        logger.warning(f'Could not read service account email from key file: {exc}')
+        return ''
 
 
 def initialize_ee():
@@ -26,7 +36,11 @@ def initialize_ee():
 
     try:
         if key_path:
-            credentials = ee.ServiceAccountCredentials('', key_file=key_path)
+            service_account = (
+                getattr(settings, 'EE_SERVICE_ACCOUNT', '')
+                or _read_service_account_email(key_path)
+            )
+            credentials = ee.ServiceAccountCredentials(service_account, key_file=key_path)
             try:
                 ee.Initialize(credentials, project=project)
             except ee.EEException as exc:

@@ -93,3 +93,5 @@ EE_ASSET_ID = 'projects/tokelo-329815/assets/Lesotho_Wetland_Classification_2013
 # Path to your GEE service account key JSON (for production)
 # For development, ee.Authenticate() is used instead
 EE_SERVICE_ACCOUNT_KEY = os.environ.get('EE_SERVICE_ACCOUNT_KEY', '')
+# Optional: override service account email (auto-read from key file if not set)
+EE_SERVICE_ACCOUNT = os.environ.get('EE_SERVICE_ACCOUNT', '')

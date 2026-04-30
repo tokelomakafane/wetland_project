@@ -83,6 +83,11 @@
     .tag-warning { background: #ffe0b2; color: #bf360c; }
     .tag-info { background: #bbdefb; color: #0d47a1; }
     .tag-resolved { background: #c8e6c9; color: #1b5e20; }
+    .tag-community {
+        background: #ede9fe; color: #5b21b6;
+        font-size: 10px; font-weight: 700; padding: 2px 8px;
+        border-radius: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+    }
 
     .alert-desc { font-size: 12px; color: #666; line-height: 1.5; margin-bottom: 6px; }
     .alert-meta { display: flex; gap: 16px; font-size: 11px; color: #999; flex-wrap: wrap; }
@@ -168,6 +173,7 @@
         <button class="filter-btn" data-filter="warning"><span class="dot" style="background:#e65100"></span>Warning</button>
         <button class="filter-btn" data-filter="info"><span class="dot" style="background:#1976d2"></span>Info</button>
         <button class="filter-btn" data-filter="resolved"><span class="dot" style="background:#2e7d32"></span>Resolved</button>
+        <button class="filter-btn" data-filter="community"><span class="dot" style="background:#7c3aed"></span>Field Reports</button>
         <input type="text" class="alert-search" id="alertSearch" placeholder="Search alerts..." />
     </div>
 
@@ -221,6 +227,13 @@
     }
 
     function iconForAlert(alert) {
+        if (alert.source === 'community_input') {
+            const obs = (alert.thresholds && alert.thresholds.observation) || '';
+            if (obs === 'grazing') return '🐄';
+            if (obs === 'erosion') return '🏜️';
+            if (obs === 'invasive_species') return '🌿';
+            return '👤';
+        }
         const cat = (alert.category || '').toLowerCase();
         if (cat.includes('ndvi')) return '🌿';
         if (cat.includes('lst') || cat.includes('temperature')) return '🌡️';
@@ -283,6 +296,15 @@
 
         filtered.forEach(a => {
             const cfg = severityConfig[a.severity];
+            const isCommunity = a.source === 'community_input';
+            const communityBadge = isCommunity ? '<span class="tag-community">Field Report</span>' : '';
+            const submittedBy = isCommunity && a.thresholds && a.thresholds.submitted_by
+                ? `<span>👤 ${a.thresholds.submitted_by}</span>` : '';
+            const triggerMeta = isCommunity
+                ? `<span>🕐 ${a.time}</span>`
+                : `<span>🗓️ Triggered ${a.trigger_year || 'N/A'}</span><span>🕐 ${a.time}</span>`;
+            const descPreview = a.desc.length > 120 ? a.desc.substring(0, 120) + '…' : a.desc;
+
             const card = document.createElement('div');
             card.className = 'alert-card severity-' + a.severity + (a.unread ? ' unread' : '');
             card.innerHTML = `
@@ -291,13 +313,14 @@
                     <div class="alert-top">
                         <span class="alert-title">${a.title}</span>
                         <span class="severity-tag ${cfg.tagCls}">${cfg.label}</span>
+                        ${communityBadge}
                     </div>
-                    <div class="alert-desc">${a.desc.substring(0, 120)}...</div>
+                    <div class="alert-desc">${descPreview}</div>
                     <div class="alert-meta">
                         <span>📍 <button type="button" class="alert-wetland-link view-map-btn" data-wetland-id="${a.wetland_id || ''}" data-wetland-name="${a.site}">${a.site}</button></span>
-                        <span>🗓️ Triggered ${a.trigger_year || 'N/A'}</span>
+                        ${triggerMeta}
                         <span>🏷️ ${a.category}</span>
-                        <span>🕐 ${a.time}</span>
+                        ${submittedBy}
                     </div>
                 </div>
                 <div class="alert-actions">
@@ -343,18 +366,27 @@
         const cfg = severityConfig[a.severity];
 
         document.getElementById('modalTitle').textContent = 'Alert Details';
+        const isCommunityAlert = a.source === 'community_input';
+        const extraRows = isCommunityAlert ? `
+            <div class="detail-row"><span class="detail-label">Reported by</span><span class="detail-value">${(a.thresholds && a.thresholds.submitted_by) || 'Anonymous'}</span></div>
+            <div class="detail-row"><span class="detail-label">Observation</span><span class="detail-value">${(a.thresholds && a.thresholds.observation) || 'N/A'}</span></div>
+        ` : `
+            <div class="detail-row"><span class="detail-label">Triggered</span><span class="detail-value">${a.trigger_year || 'N/A'}</span></div>
+            <div class="detail-row"><span class="detail-label">Source</span><span class="detail-value">${a.source}</span></div>
+        `;
+
         document.getElementById('modalBody').innerHTML = `
             <div style="margin-bottom:14px;">
                 <span class="severity-tag ${cfg.tagCls}" style="font-size:11px;padding:3px 12px;">${cfg.label}</span>
+                ${isCommunityAlert ? '<span class="tag-community" style="margin-left:6px;">Field Report</span>' : ''}
                 <span style="font-size:12px;color:#999;margin-left:10px;">${a.date}</span>
             </div>
             <h4 style="font-size:15px;color:#1a1a1a;margin-bottom:14px;">${a.title}</h4>
             <div class="detail-row"><span class="detail-label">Site</span><span class="detail-value">${a.site}</span></div>
-            <div class="detail-row"><span class="detail-label">Triggered</span><span class="detail-value">${a.trigger_year || 'N/A'}</span></div>
             <div class="detail-row"><span class="detail-label">District</span><span class="detail-value">${a.district}</span></div>
             <div class="detail-row"><span class="detail-label">Category</span><span class="detail-value">${a.category}</span></div>
-            <div class="detail-row"><span class="detail-label">Source</span><span class="detail-value">${a.source}</span></div>
             <div class="detail-row"><span class="detail-label">Time</span><span class="detail-value">${a.time}</span></div>
+            ${extraRows}
             <div class="detail-desc">${a.desc}</div>
             <div style="margin-top:14px;">
                 <button type="button" class="action-btn primary" id="modalViewMapBtn">View on Map</button>
@@ -402,7 +434,9 @@
         const search = document.getElementById('alertSearch').value.toLowerCase();
         let filtered = alerts;
 
-        if (activeFilter !== 'all') {
+        if (activeFilter === 'community') {
+            filtered = filtered.filter(a => a.source === 'community_input');
+        } else if (activeFilter !== 'all') {
             filtered = filtered.filter(a => a.severity === activeFilter);
         }
         if (search) {

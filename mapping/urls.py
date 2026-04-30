@@ -12,6 +12,7 @@ urlpatterns = [
     path('lst/', views.lst_view, name='lst'),
     path('alerts/', views.alerts_view, name='alerts'),
     path('community/', views.community_view, name='community'),
+    path('community/log/', views.community_inputs_log_view, name='community_inputs_log'),
     path('api/community-inputs/', views.api_list_community_inputs, name='community_input_list'),
     path('api/community-inputs/create/', views.api_create_community_input, name='community_input_create'),
     path('api/community-inputs/<int:input_id>/', views.api_get_community_input, name='community_input_detail'),

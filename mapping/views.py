@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.http import FileResponse
 from django.shortcuts import render, redirect
@@ -151,6 +152,43 @@ def community_view(request):
         'wetlands_geojson': json.dumps({'type': 'FeatureCollection', 'features': features}),
     }
     return render(request, 'mapping/community.html', context)
+
+
+def community_inputs_log_view(request):
+    """Paginated log of all community inputs from the database."""
+    severity_filter = request.GET.get('severity', '')
+    observation_filter = request.GET.get('observation', '')
+    wetland_filter = request.GET.get('wetland', '')
+
+    qs = CommunityInput.objects.select_related('wetland').order_by('-created_at')
+
+    if severity_filter:
+        qs = qs.filter(severity=severity_filter)
+    if observation_filter:
+        qs = qs.filter(observation=observation_filter)
+    if wetland_filter:
+        try:
+            qs = qs.filter(wetland_id=int(wetland_filter))
+        except (TypeError, ValueError):
+            pass
+
+    paginator = Paginator(qs, 12)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name').values('id', 'name')
+
+    return render(request, 'mapping/community_inputs_log.html', {
+        'active_page': 'community',
+        'page_obj': page_obj,
+        'wetlands': list(wetlands),
+        'severity_filter': severity_filter,
+        'observation_filter': observation_filter,
+        'wetland_filter': wetland_filter,
+        'severity_choices': CommunityInput.SEVERITY_CHOICES,
+        'observation_choices': CommunityInput.OBSERVATION_CHOICES,
+        'total_count': paginator.count,
+    })
 
 
 def api_create_community_input(request):
