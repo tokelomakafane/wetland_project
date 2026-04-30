@@ -92,6 +92,37 @@
             background: #fff3cd; color: #856404; border-radius: 20px;
             font-size: 12px; font-weight: 600;
         }
+
+        @media (max-width: 768px) {
+            body {
+                display: block;
+                height: auto;
+                min-height: 100dvh;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+
+            .sidebar {
+                width: 100%;
+                min-width: 0;
+                height: auto;
+            }
+
+            .sidebar.collapsed {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .main-wrapper {
+                min-height: 100dvh;
+            }
+
+            .content {
+                min-height: 0;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -109,10 +140,10 @@
                 <span class="nav-icon">&#128506;</span>
                 <span class="nav-label">Mapping</span>
             </a>
-            <a href="{% url 'mapping:monitor' %}" class="nav-item {% if active_page == 'monitor' %}active{% endif %}">
+            <!-- <a href="{% url 'mapping:monitor' %}" class="nav-item {% if active_page == 'monitor' %}active{% endif %}">
                 <span class="nav-icon">&#128153;</span>
                 <span class="nav-label">Monitor Health</span>
-            </a>
+            </a> -->
             <a href="{% url 'mapping:lst' %}" class="nav-item {% if active_page == 'lst' %}active{% endif %}">
                 <span class="nav-icon">&#127777;</span>
                 <span class="nav-label">LST Monitor</span>
