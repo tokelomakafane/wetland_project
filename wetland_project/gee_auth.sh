@@ -1,0 +1,1 @@
+.venv/bin/python manage.py authenticate_earth_engine --auth-mode notebook

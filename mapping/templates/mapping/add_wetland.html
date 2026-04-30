@@ -196,7 +196,7 @@
                 <button form="wetlandForm" type="submit" class="submit-btn">
                     <i class="fas fa-save"></i> Save Wetland
                 </button>
-                <a href="{% url 'mapping:wetland_registry' %}" class="cancel-btn">
+                <a href="{% url 'wetlands:wetland_registry' %}" class="cancel-btn">
                     <i class="fas fa-times"></i> Cancel
                 </a>
             </div>
@@ -380,7 +380,7 @@
 
         const formData = new FormData(document.getElementById("wetlandForm"));
         
-        fetch("{% url 'mapping:add_wetland' %}", {
+        fetch("{% url 'wetlands:add_wetland' %}", {
             method: "POST",
             body: formData
         })
@@ -388,7 +388,7 @@
         .then(data => {
             if (data.success) {
                 showStatus("success", "Wetland saved! Redirecting...");
-                setTimeout(() => window.location.href = data.redirect_url || "{% url 'mapping:wetland_registry' %}", 1500);
+                setTimeout(() => window.location.href = data.redirect_url || "{% url 'wetlands:wetland_registry' %}", 1500);
             } else {
                 const errors = data.errors ? Object.values(data.errors).flat().join(", ") : "An error occurred";
                 showStatus("error", errors);

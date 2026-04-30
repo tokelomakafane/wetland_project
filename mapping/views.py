@@ -1,13 +1,40 @@
 import json
 import os
+from pathlib import Path
 
 from django.http import JsonResponse
+from django.http import FileResponse
 from django.shortcuts import render, redirect
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
 from django import forms as django_forms
 from django.db import models
+from django.urls import reverse
 
 from .ee_utils import initialize_ee
+from .models import CommunityInput, Wetland
+from timelapse.tasks import start_timelapse_job
+from wetlands.views import _seed_static_wetlands_into_db
+
+
+def _ee_json_error(exc):
+    """Return a clear JSON response for Earth Engine failures."""
+    message = str(exc)
+    project = getattr(settings, 'EE_PROJECT', '')
+    details = {
+        'error': message,
+        'ee_project': project,
+    }
+
+    if 'USER_PROJECT_DENIED' in message or 'required permission' in message.lower():
+        details['hint'] = (
+            'Grant your account roles/serviceusage.serviceUsageConsumer on the EE project '
+            f'({project}) or set EE_PROJECT to a project you can access.'
+        )
+        return JsonResponse(details, status=503)
+
+    return JsonResponse(details, status=500)
 
 
 # ── Wetland sample sites (same data as in GEE script) ──────────────
@@ -43,9 +70,23 @@ def index(request):
 
 def login_view(request):
     """Render simulated login page; POST redirects to dashboard."""
+    error = None
     if request.method == 'POST':
-        return redirect('mapping:dashboard')
-    return render(request, 'mapping/login.html')
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            return redirect('mapping:dashboard')
+        else:
+            error = 'Invalid username or password'
+    return render(request, 'mapping/login.html', {'error': error})
+
+
+def logout_view(request):
+    """Log out the current user and redirect to login."""
+    logout(request)
+    return redirect('mapping:login')
 
 
 def dashboard(request):
@@ -61,12 +102,219 @@ def alerts_view(request):
     return render(request, 'mapping/alerts.html', {'active_page': 'alerts'})
 
 
+def api_early_warning_alerts(request):
+    """Compatibility wrapper that delegates to the dedicated early_warning app."""
+    from early_warning.views import api_early_warning_alerts as impl
+
+    return impl(request)
+
+
+def api_mark_early_warning_alert_read(request):
+    """Compatibility wrapper that delegates alert read-state persistence."""
+    from early_warning.views import mark_early_warning_alert_read as impl
+
+    return impl(request)
+
+
+@ensure_csrf_cookie
 def community_view(request):
-    return render(request, 'mapping/community.html', {'active_page': 'community'})
+    _seed_static_wetlands_into_db()
+
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name')
+
+    features = []
+    for wetland in wetlands:
+        geometry = wetland.geometry
+        if isinstance(geometry, str):
+            try:
+                geometry = json.loads(geometry)
+            except json.JSONDecodeError:
+                continue
+        if geometry.get('type') == 'Feature':
+            geometry = geometry.get('geometry', {})
+        if geometry.get('type') not in ('Polygon', 'MultiPolygon'):
+            continue
+
+        features.append({
+            'type': 'Feature',
+            'geometry': geometry,
+            'properties': {
+                'id': wetland.id,
+                'name': wetland.name,
+                'village': wetland.village,
+                'area_ha': wetland.area_ha,
+            },
+        })
+
+    context = {
+        'active_page': 'community',
+        'wetlands_geojson': json.dumps({'type': 'FeatureCollection', 'features': features}),
+    }
+    return render(request, 'mapping/community.html', context)
 
 
-def drone_upload_view(request):
-    return render(request, 'mapping/drone_upload.html', {'active_page': 'drone_upload'})
+def api_create_community_input(request):
+    """Persist a community input report for a selected wetland."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+
+    try:
+        wetland_id = int(payload.get('wetland_id'))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+
+    observation = (payload.get('observation') or '').strip()
+    severity = (payload.get('severity') or '').strip()
+    comments = (payload.get('comments') or '').strip()
+
+    valid_observations = {choice[0] for choice in CommunityInput.OBSERVATION_CHOICES}
+    valid_severities = {choice[0] for choice in CommunityInput.SEVERITY_CHOICES}
+
+    if observation not in valid_observations:
+        return JsonResponse({'error': 'Invalid observation value'}, status=400)
+    if severity not in valid_severities:
+        return JsonResponse({'error': 'Invalid severity value'}, status=400)
+    if not comments:
+        return JsonResponse({'error': 'Comments are required'}, status=400)
+
+    try:
+        wetland = Wetland.objects.get(pk=wetland_id, is_current=True)
+    except Wetland.DoesNotExist:
+        return JsonResponse({'error': 'Wetland not found'}, status=404)
+
+    submitted_by = ''
+    if getattr(request, 'user', None) and request.user.is_authenticated:
+        submitted_by = request.user.get_full_name() or request.user.username
+
+    entry = CommunityInput.objects.create(
+        wetland=wetland,
+        observation=observation,
+        severity=severity,
+        comments=comments,
+        submitted_by=submitted_by,
+    )
+
+    return JsonResponse({
+        'id': entry.id,
+        'message': 'Community input saved successfully',
+        'wetland': wetland.name,
+        'observation': entry.observation,
+        'severity': entry.severity,
+        'comments': entry.comments,
+        'created_at': entry.created_at.isoformat(),
+    }, status=201)
+
+
+def _serialize_community_input(entry):
+    return {
+        'id': entry.id,
+        'wetland_id': entry.wetland_id,
+        'wetland': entry.wetland.name,
+        'observation': entry.observation,
+        'severity': entry.severity,
+        'comments': entry.comments,
+        'submitted_by': entry.submitted_by,
+        'created_at': entry.created_at.isoformat(),
+        'updated_at': entry.updated_at.isoformat(),
+    }
+
+
+def api_list_community_inputs(request):
+    """List community inputs, optionally filtered by wetland_id."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+
+    queryset = CommunityInput.objects.select_related('wetland').order_by('-created_at')
+    wetland_id = request.GET.get('wetland_id')
+    if wetland_id:
+        try:
+            queryset = queryset.filter(wetland_id=int(wetland_id))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+
+    return JsonResponse({'results': [_serialize_community_input(item) for item in queryset]})
+
+
+def api_get_community_input(request, input_id):
+    """Retrieve a single community input by id."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'GET required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.select_related('wetland').get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    return JsonResponse(_serialize_community_input(entry))
+
+
+def api_update_community_input(request, input_id):
+    """Update an existing community input."""
+    if request.method not in ('PUT', 'PATCH'):
+        return JsonResponse({'error': 'PUT or PATCH required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.select_related('wetland').get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+
+    if 'observation' in payload:
+        observation = (payload.get('observation') or '').strip()
+        valid_observations = {choice[0] for choice in CommunityInput.OBSERVATION_CHOICES}
+        if observation not in valid_observations:
+            return JsonResponse({'error': 'Invalid observation value'}, status=400)
+        entry.observation = observation
+
+    if 'severity' in payload:
+        severity = (payload.get('severity') or '').strip()
+        valid_severities = {choice[0] for choice in CommunityInput.SEVERITY_CHOICES}
+        if severity not in valid_severities:
+            return JsonResponse({'error': 'Invalid severity value'}, status=400)
+        entry.severity = severity
+
+    if 'comments' in payload:
+        comments = (payload.get('comments') or '').strip()
+        if not comments:
+            return JsonResponse({'error': 'Comments are required'}, status=400)
+        entry.comments = comments
+
+    if 'wetland_id' in payload:
+        try:
+            wetland_id = int(payload.get('wetland_id'))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid wetland_id'}, status=400)
+        try:
+            wetland = Wetland.objects.get(pk=wetland_id, is_current=True)
+        except Wetland.DoesNotExist:
+            return JsonResponse({'error': 'Wetland not found'}, status=404)
+        entry.wetland = wetland
+
+    entry.save()
+    return JsonResponse(_serialize_community_input(entry))
+
+
+def api_delete_community_input(request, input_id):
+    """Delete an existing community input."""
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'DELETE required'}, status=405)
+
+    try:
+        entry = CommunityInput.objects.get(pk=input_id)
+    except CommunityInput.DoesNotExist:
+        return JsonResponse({'error': 'Community input not found'}, status=404)
+
+    entry.delete()
+    return JsonResponse({'message': 'Community input deleted'})
 
 
 def users_view(request):
@@ -76,11 +324,11 @@ def users_view(request):
 def ee_tile_url(request):
     """Return Earth Engine map tile URLs for the classification layers."""
     import ee
-    initialize_ee()
 
     asset_id = getattr(settings, 'EE_ASSET_ID', '')
 
     try:
+        initialize_ee()
         # Load the classified image from GEE Asset
         classified = ee.Image(asset_id)
 
@@ -130,17 +378,17 @@ def ee_tile_url(request):
         })
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 def wetland_stats(request):
     """Return wetland area statistics."""
     import ee
-    initialize_ee()
 
     asset_id = getattr(settings, 'EE_ASSET_ID', '')
 
     try:
+        initialize_ee()
         classified = ee.Image(asset_id)
         lesotho = ee.FeatureCollection('FAO/GAUL/2015/level0') \
             .filter(ee.Filter.eq('ADM0_NAME', 'Lesotho'))
@@ -167,7 +415,7 @@ def wetland_stats(request):
         })
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 def sample_sites(request):
@@ -249,7 +497,6 @@ def lst_view(request):
 def wetland_lst(request):
     """Return per-site mean LST for a given year (Oct → Mar summer)."""
     import ee
-    initialize_ee()
 
     year = request.GET.get('year', '2023')
     try:
@@ -260,6 +507,7 @@ def wetland_lst(request):
         return JsonResponse({'error': 'Invalid year parameter'}, status=400)
 
     try:
+        initialize_ee()
         sites = _get_sample_sites_fc()
         start = ee.Date.fromYMD(year, 10, 1)
         end = ee.Date.fromYMD(year + 1, 3, 31)
@@ -306,15 +554,15 @@ def wetland_lst(request):
         return JsonResponse({'year': year, 'sites': site_data, 'tile_url': tile_url})
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 def wetland_lst_predict(request):
     """Return historical per-site LST (2013-2024) + linear predictions (2025-2030)."""
     import ee
-    initialize_ee()
 
     try:
+        initialize_ee()
         sites = _get_sample_sites_fc()
         years = list(range(2013, 2025))
 
@@ -375,7 +623,7 @@ def wetland_lst_predict(request):
         return JsonResponse({'sites': response_data})
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 # ── Soil Erosion helpers ───────────────────────────────────────────
@@ -569,10 +817,39 @@ def erosion_view(request):
     return render(request, 'mapping/erosion_monitor.html', {'active_page': 'erosion'})
 
 
+def timelapse_view(request):
+    from timelapse.views import timelapse_view as impl
+    return impl(request)
+
+
+def _wetland_geometry_geojson(wetland):
+    from timelapse.views import _wetland_geometry_geojson as impl
+    return impl(wetland)
+
+
+def _approximate_area_ha(geometry):
+    from timelapse.views import _approximate_area_ha as impl
+    return impl(geometry)
+
+
+def _get_latest_timelapse_job(wetland):
+    from timelapse.views import _get_latest_timelapse_job as impl
+    return impl(wetland)
+
+
+def _annual_timelapse_metrics(geometry, years, buffer_meters=0, cloud_threshold=20):
+    from timelapse.views import _annual_timelapse_metrics as impl
+    return impl(geometry, years, buffer_meters=buffer_meters, cloud_threshold=cloud_threshold)
+
+
+def wetland_timelapse_view(request, pk):
+    from timelapse.views import wetland_timelapse_view as impl
+    return impl(request, pk)
+
+
 def wetland_erosion(request):
     """Return per-polygon RUSLE soil loss for a given year + tile URL."""
     import ee
-    initialize_ee()
 
     year = request.GET.get('year', '2023')
     try:
@@ -583,6 +860,7 @@ def wetland_erosion(request):
         return JsonResponse({'error': 'Invalid year parameter'}, status=400)
 
     try:
+        initialize_ee()
         soil_loss = _get_erosion_for_year(year)
         polygons = _get_wetland_polygon_fc()
 
@@ -634,13 +912,12 @@ def wetland_erosion(request):
         })
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 def wetland_erosion_compare(request):
     """Compare RUSLE soil loss between two years."""
     import ee
-    initialize_ee()
 
     year_a = request.GET.get('year_a', '2018')
     year_b = request.GET.get('year_b', '2023')
@@ -654,6 +931,7 @@ def wetland_erosion_compare(request):
         return JsonResponse({'error': 'Invalid year parameter'}, status=400)
 
     try:
+        initialize_ee()
         sl_a = _get_erosion_for_year(year_a)
         sl_b = _get_erosion_for_year(year_b)
         polygons = _get_wetland_polygon_fc()
@@ -701,15 +979,15 @@ def wetland_erosion_compare(request):
         })
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 def wetland_erosion_predict(request):
     """Return RUSLE soil loss trend (2017-2024) + predictions (2025-2030) per polygon."""
     import ee
-    initialize_ee()
 
     try:
+        initialize_ee()
         geom = _load_wetland_geometry()
         polygons = _get_wetland_polygon_fc()
         years = list(range(2017, 2025))
@@ -774,7 +1052,7 @@ def wetland_erosion_predict(request):
         return JsonResponse({'polygons': polygon_data})
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return _ee_json_error(e)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -782,654 +1060,75 @@ def wetland_erosion_predict(request):
 # ══════════════════════════════════════════════════════════════════
 
 def _load_static_wetlands_geojson():
-    """Load static wetland geometries from JSON file and convert to FeatureCollection."""
-    json_path = os.path.join(os.path.dirname(__file__), 'wetland_polygons.json')
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # Handle GeometryCollection format (convert to FeatureCollection)
-        if data.get('type') == 'GeometryCollection':
-            features = []
-            for i, geom in enumerate(data.get('geometries', [])):
-                feature = {
-                    'type': 'Feature',
-                    'geometry': geom,
-                    'properties': {
-                        'name': WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else f'Wetland {i}',
-                        'village': '',
-                        'source': 'historical_static',
-                        'is_static': True,
-                    }
-                }
-                features.append(feature)
-            return {'type': 'FeatureCollection', 'features': features}
-        
-        # Already a FeatureCollection
-        return data
-    except FileNotFoundError:
-        return {'type': 'FeatureCollection', 'features': []}
+    from wetlands.views import _load_static_wetlands_geojson as impl
+    return impl()
 
 
 def _seed_static_wetlands_into_db():
-    """Create database rows for historical wetlands so they can be monitored too."""
-    from .models import Wetland
-
-    static_geojson = _load_static_wetlands_geojson()
-    created_count = 0
-
-    for i, feature in enumerate(static_geojson.get('features', [])):
-        props = feature.get('properties', {}) or {}
-        geometry = feature.get('geometry')
-        if not geometry:
-            continue
-
-        name = props.get('name') or (WETLAND_NAMES[i] if i < len(WETLAND_NAMES) else f'Wetland {i}')
-
-        wetland, created = Wetland.objects.get_or_create(
-            name=name,
-            defaults={
-                'village': props.get('village', ''),
-                'description': props.get('description', 'Historical wetland'),
-                'geometry': json.dumps(geometry),
-                'area_ha': props.get('area_ha'),
-                'elevation_m': props.get('elevation_m'),
-                'status': 'archived',
-                'risk_level': props.get('risk_level', 'unknown'),
-                'source': 'historical_static',
-                'uploaded_by': 'system',
-                'version': 1,
-                'is_current': True,
-                'metadata': {
-                    'source_file': 'wetland_polygons.json',
-                    'static_index': i,
-                    'is_static': True,
-                },
-            }
-        )
-
-        if created:
-            created_count += 1
-
-    return created_count
+    from wetlands.views import _seed_static_wetlands_into_db as impl
+    return impl()
 
 
 def wetland_registry(request):
-    """
-    View the list of all wetlands (static + newly mapped).
-    Support filtering and search.
-    """
-    from .models import Wetland
-    from .forms import WetlandFilterForm
-
-    # Ensure the historical wetlands exist in the database so they can be monitored.
-    _seed_static_wetlands_into_db()
-    
-    wetlands = Wetland.objects.filter(is_current=True).order_by('-date_discovered')
-    form = WetlandFilterForm(request.GET or None)
-    
-    if form.is_valid():
-        search = form.cleaned_data.get('search')
-        village = form.cleaned_data.get('village')
-        status = form.cleaned_data.get('status')
-        risk_level = form.cleaned_data.get('risk_level')
-        min_area = form.cleaned_data.get('min_area_ha')
-        max_area = form.cleaned_data.get('max_area_ha')
-        
-        if search:
-            wetlands = wetlands.filter(
-                models.Q(name__icontains=search) | 
-                models.Q(village__icontains=search) |
-                models.Q(description__icontains=search)
-            )
-        if village:
-            wetlands = wetlands.filter(village__icontains=village)
-        if status:
-            wetlands = wetlands.filter(status=status)
-        if risk_level:
-            wetlands = wetlands.filter(risk_level=risk_level)
-        if min_area:
-            wetlands = wetlands.filter(area_ha__gte=min_area)
-        if max_area:
-            wetlands = wetlands.filter(area_ha__lte=max_area)
-    
-    # Convert stored geometry into map-ready GeoJSON for Leaflet.
-    def _geometry_to_geojson(geometry_value):
-        if not geometry_value:
-            return None
-
-        # Option 2 stores geometry as JSON string; keep compatibility with dicts too.
-        if isinstance(geometry_value, str):
-            parsed = json.loads(geometry_value)
-        else:
-            parsed = geometry_value
-
-        if parsed.get('type') == 'Feature':
-            return parsed.get('geometry')
-
-        return parsed
-
-    # Convert database wetlands to GeoJSON features
-    features = []
-    for wetland in wetlands:
-        geometry = _geometry_to_geojson(wetland.geometry)
-        if not geometry:
-            continue
-
-        features.append({
-            'type': 'Feature',
-            'id': f'db_{wetland.id}',
-            'geometry': geometry,
-            'properties': {
-                'id': wetland.id,
-                'name': wetland.name,
-                'village': wetland.village,
-                'area_ha': wetland.area_ha,
-                'elevation_m': wetland.elevation_m,
-                'description': wetland.description,
-                'status': wetland.status,
-                'risk_level': wetland.risk_level,
-                'date_discovered': wetland.date_discovered.isoformat(),
-                'source': wetland.source,
-                'is_static': False,
-            }
-        })
-    
-    geojson = {
-        'type': 'FeatureCollection',
-        'features': features
-    }
-    
-    context = {
-        'wetlands': wetlands,
-        'form': form,
-        'geojson': json.dumps(geojson),
-        'total_count': Wetland.objects.filter(is_current=True).count(),
-        'static_count': Wetland.objects.filter(source='historical_static', is_current=True).count(),
-        'active_page': 'wetland_registry',
-    }
-    
-    return render(request, 'mapping/wetland_registry.html', context)
+    from wetlands.views import wetland_registry as impl
+    return impl(request)
 
 
 def add_wetland(request):
-    """
-    Add a new wetland by drawing polygon on map or uploading GeoJSON.
-    """
-    from .forms import WetlandForm
-    from .models import Wetland
-    
-    if request.method == 'POST':
-        form = WetlandForm(request.POST)
-        if form.is_valid():
-            wetland = form.save(commit=False)
-            wetland.source = 'manual_drawing'
-            wetland.save()
-            
-            return JsonResponse({
-                'success': True,
-                'message': f'Wetland "{wetland.name}" created successfully!',
-                'wetland_id': wetland.id,
-                'redirect_url': redirect('mapping:monitor_wetland', pk=wetland.id).url,
-            })
-        else:
-            errors = form.errors.as_json()
-            return JsonResponse({
-                'success': False,
-                'errors': json.loads(errors),
-            }, status=400)
-    else:
-        form = WetlandForm()
-    
-    context = {
-        'form': form,
-        'active_page': 'add_wetland',
-    }
-    
-    return render(request, 'mapping/add_wetland.html', context)
+    from wetlands.views import add_wetland as impl
+    return impl(request)
 
 
 def upload_wetlands(request):
-    """
-    Bulk upload wetlands from GeoJSON, Shapefile, or KML.
-    """
-    from .forms import BulkWetlandUploadForm
-    from .models import Wetland
-    
-    if request.method == 'POST':
-        form = BulkWetlandUploadForm(request.POST, request.FILES)
-        if form.is_valid():
-            file_obj = request.FILES['file']
-            file_format = form.cleaned_data['file_format']
-            source = form.cleaned_data['source']
-            uploaded_by = form.cleaned_data['uploaded_by']
-            overwrite = form.cleaned_data.get('overwrite_existing', False)
-            
-            try:
-                features = _parse_upload_file(file_obj, file_format)
-                created_count = 0
-                updated_count = 0
-                errors = []
-                
-                for i, feature in enumerate(features):
-                    try:
-                        geometry = feature.get('geometry')
-                        if not geometry:
-                            raise ValueError('Missing geometry')
-
-                        if geometry.get('type') not in ['Polygon', 'MultiPolygon']:
-                            raise ValueError('Only Polygon/MultiPolygon are supported')
-
-                        geometry_json = json.dumps(geometry)
-                        props = feature.get('properties', {})
-                        name = props.get('name', f'Uploaded_Wetland_{i}')
-                        
-                        # Check if already exists
-                        existing = Wetland.objects.filter(name=name, is_current=True).first()
-                        
-                        if existing and not overwrite:
-                            errors.append(f"Wetland '{name}' already exists (not overwriting)")
-                            continue
-                        
-                        if existing and overwrite:
-                            existing.is_current = False
-                            existing.save()
-                            updated_count += 1
-                        
-                        wetland = Wetland.objects.create(
-                            name=name,
-                            village=props.get('village', ''),
-                            description=props.get('description', ''),
-                            geometry=geometry_json,
-                            source=source,
-                            uploaded_by=uploaded_by,
-                            metadata=props,
-                        )
-                        created_count += 1
-                    
-                    except Exception as e:
-                        errors.append(f"Feature {i}: {str(e)}")
-                
-                return JsonResponse({
-                    'success': True,
-                    'created': created_count,
-                    'updated': updated_count,
-                    'errors': errors,
-                    'message': f'Uploaded {created_count} wetlands successfully!'
-                })
-            
-            except Exception as e:
-                return JsonResponse({
-                    'success': False,
-                    'error': str(e)
-                }, status=400)
-    else:
-        form = BulkWetlandUploadForm()
-    
-    context = {
-        'form': form,
-        'active_page': 'upload_wetlands',
-    }
-    
-    return render(request, 'mapping/upload_wetlands.html', context)
+    from wetlands.views import upload_wetlands as impl
+    return impl(request)
 
 
 def _parse_upload_file(file_obj, file_format):
-    """Parse uploaded file and extract features."""
-    import json
-    
-    if file_format == 'geojson':
-        content = file_obj.read().decode('utf-8')
-        data = json.loads(content)
-        
-        if data.get('type') == 'FeatureCollection':
-            return data.get('features', [])
-        elif data.get('type') == 'Feature':
-            return [data]
-        else:
-            raise ValueError("Expected FeatureCollection or Feature")
-    
-    elif file_format == 'kml':
-        # Simple KML parsing (would need more robust implementation in production)
-        raise NotImplementedError("KML upload not yet implemented")
-    
-    elif file_format == 'shapefile':
-        raise NotImplementedError("Shapefile upload not yet implemented")
-    
-    raise ValueError(f"Unsupported format: {file_format}")
+    from wetlands.views import _parse_upload_file as impl
+    return impl(file_obj, file_format)
 
 
 def monitor_wetland(request, pk):
-    """
-    Monitor a specific wetland with erosion risk data.
-    """
-    from .models import Wetland, WetlandMonitoringRecord
-
-    _seed_static_wetlands_into_db()
-    
-    try:
-        wetland = Wetland.objects.get(pk=pk, is_current=True)
-    except Wetland.DoesNotExist:
-        return render(request, '404.html', status=404)
-    
-    # Get monitoring records
-    records = WetlandMonitoringRecord.objects.filter(wetland=wetland).order_by('-year')
-    
-    # Get latest record
-    latest_record = records.first()
-    
-    # Convert stored geometry string to GeoJSON geometry object
-    geometry = json.loads(wetland.geometry) if isinstance(wetland.geometry, str) else wetland.geometry
-    if geometry.get('type') == 'Feature':
-        geometry = geometry.get('geometry')
-
-    # Convert geometry to GeoJSON
-    geojson = {
-        'type': 'Feature',
-        'geometry': geometry,
-        'properties': {
-            'name': wetland.name,
-            'village': wetland.village,
-            'area_ha': wetland.area_ha,
-        }
-    }
-    
-    context = {
-        'wetland': wetland,
-        'latest_record': latest_record,
-        'records': records,
-        'geojson': json.dumps(geojson),
-        'active_page': 'monitor_wetland',
-    }
-    
-    return render(request, 'mapping/monitor_wetland.html', context)
+    from wetlands.views import monitor_wetland as impl
+    return impl(request, pk)
 
 
 def api_wetland_erosion_data(request, pk):
-    """
-    API endpoint: Get erosion monitoring data for a specific wetland.
-    """
-    import ee
-    import math
-    from .models import Wetland, WetlandMonitoringRecord
-
-    _seed_static_wetlands_into_db()
-    
-    try:
-        wetland = Wetland.objects.get(pk=pk, is_current=True)
-    except Wetland.DoesNotExist:
-        return JsonResponse({'error': 'Wetland not found'}, status=404)
-    
-    year = request.GET.get('year')
-    
-    try:
-        year = int(year) if year else 2023
-        if year < 2013 or year > 2024:
-            return JsonResponse({'error': 'Year must be between 2013 and 2024'}, status=400)
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Invalid year parameter'}, status=400)
-    
-    try:
-        initialize_ee()
-        
-        geom_geojson = json.loads(wetland.geometry) if isinstance(wetland.geometry, str) else wetland.geometry
-        if geom_geojson.get('type') == 'Feature':
-            geom_geojson = geom_geojson.get('geometry')
-        geom = ee.Geometry(geom_geojson)
-        
-        # Compute erosion risk for the year
-        start_date = ee.Date.fromYMD(year, 1, 1)
-        end_date = ee.Date.fromYMD(year, 12, 31)
-        
-        col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-            .filterDate(start_date, end_date) \
-            .filterBounds(geom) \
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-        
-        # Calculate indices
-        dem = ee.Image('USGS/SRTMGL1_003')
-        slope = ee.Terrain.slope(dem).clip(geom)
-        
-        bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
-        ndvi = col.map(_calculate_ndvi).select('NDVI').mean().clip(geom)
-        
-        # Erosion risk classification
-        risk = ee.Image(0) \
-            .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
-            .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
-            .clip(geom)
-        
-        # Compute statistics
-        stats = risk.addBands(bsi).addBands(ndvi).addBands(slope).reduceRegion(
-            reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), '', True),
-            geometry=geom,
-            scale=30,
-            maxPixels=1e6,
-        )
-        
-        data = stats.getInfo()
-        
-        # Classify risk
-        mean_risk = data.get('constant_mean')
-        risk_class = 'LOW'
-        if mean_risk and mean_risk > 1.5:
-            risk_class = 'HIGH'
-        elif mean_risk and mean_risk > 0.5:
-            risk_class = 'MODERATE'
-        
-        # Calculate RUSLE soil loss (t/ha/yr)
-        slope_mean = data.get('slope_mean', 0)
-        ndvi_mean = data.get('NDVI_mean', 0)
-        
-        # RUSLE: A = R × K × LS × C × P
-        R = 500  # Rainfall-runoff erosivity factor (regional estimate)
-        K = 0.32  # Soil erodibility factor (typical)
-        
-        # LS factor: slope length and steepness
-        slope_percent = slope_mean * 1.192  # convert degrees to percent
-        S = max(0.1, (slope_percent / 45) ** 0.5)  # slope steepness factor
-        L = 1.0  # slope length factor (standard)
-        LS = L * S
-        
-        # C factor: vegetation cover (lower NDVI = higher erosion)
-        C = max(0.05, min(1.0, math.exp(-2.0 * (ndvi_mean + 0.5))))
-        
-        # P factor: support practice (assume 1.0 for natural conditions)
-        P = 1.0
-        
-        soil_loss = R * K * LS * C * P
-        
-        return JsonResponse({
-            'year': year,
-            'wetland_name': wetland.name,
-            'soil_loss_t_ha_yr': round(soil_loss, 2),
-            'bsi_mean': round(data.get('BSI_mean', 0), 3),
-            'bsi_std': round(data.get('BSI_stdDev', 0), 3),
-            'ndvi_mean': round(data.get('NDVI_mean', 0), 3),
-            'ndvi_std': round(data.get('NDVI_stdDev', 0), 3),
-            'slope_mean': round(data.get('slope_mean', 0), 2),
-            'erosion_risk': round(mean_risk or 0, 3),
-            'risk_class': risk_class,
-        })
-    
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    from wetlands.views import api_wetland_erosion_data as impl
+    return impl(request, pk)
 
 
 def api_wetland_comparison(request):
-    """
-    API endpoint: Compare erosion risk between two years for a wetland.
-    """
-    import ee
-    from .models import Wetland
-    
-    wetland_id = request.GET.get('wetland_id')
-    year_a = request.GET.get('year_a', '2018')
-    year_b = request.GET.get('year_b', '2023')
-    
-    try:
-        wetland = Wetland.objects.get(pk=int(wetland_id), is_current=True)
-    except (Wetland.DoesNotExist, ValueError):
-        return JsonResponse({'error': 'Wetland not found'}, status=404)
-    
-    try:
-        year_a, year_b = int(year_a), int(year_b)
-    except (ValueError, TypeError):
-        return JsonResponse({'error': 'Invalid year parameters'}, status=400)
-    
-    try:
-        initialize_ee()
-        
-        geom_geojson = json.loads(wetland.geometry) if isinstance(wetland.geometry, str) else wetland.geometry
-        if geom_geojson.get('type') == 'Feature':
-            geom_geojson = geom_geojson.get('geometry')
-        geom = ee.Geometry(geom_geojson)
-        
-        def get_risk(year):
-            start = ee.Date.fromYMD(year, 1, 1)
-            end = ee.Date.fromYMD(year, 12, 31)
-            col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-                .filterDate(start, end) \
-                .filterBounds(geom) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-            
-            dem = ee.Image('USGS/SRTMGL1_003')
-            slope = ee.Terrain.slope(dem).clip(geom)
-            bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
-            
-            risk = ee.Image(0) \
-                .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
-                .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
-                .clip(geom)
-            
-            return risk
-        
-        risk_a = get_risk(year_a)
-        risk_b = get_risk(year_b)
-        
-        change = risk_b.subtract(risk_a)
-        
-        stats = change.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=geom,
-            scale=30,
-            maxPixels=1e6,
-        )
-        
-        data = stats.getInfo()
-        mean_change = data.get('constant', 0)
-        
-        direction = 'stable'
-        if mean_change > 0.1:
-            direction = 'worsening'
-        elif mean_change < -0.1:
-            direction = 'improving'
-        
-        return JsonResponse({
-            'year_a': year_a,
-            'year_b': year_b,
-            'mean_change': round(mean_change, 3),
-            'direction': direction,
-        })
-    
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    from wetlands.views import api_wetland_comparison as impl
+    return impl(request)
 
 
 def api_wetland_prediction(request, pk):
-    """
-    API endpoint: Return historical erosion risk and future predictions for one wetland.
-    """
-    import ee
-    from .models import Wetland
+    from wetlands.views import api_wetland_prediction as impl
+    return impl(request, pk)
 
-    _seed_static_wetlands_into_db()
 
-    try:
-        wetland = Wetland.objects.get(pk=int(pk), is_current=True)
-    except (Wetland.DoesNotExist, ValueError):
-        return JsonResponse({'error': 'Wetland not found'}, status=404)
+def _parse_int_param(payload, key, default, minimum=None, maximum=None):
+    from timelapse.views import _parse_int_param as impl
+    return impl(payload, key, default, minimum=minimum, maximum=maximum)
 
-    try:
-        initialize_ee()
 
-        geom_geojson = json.loads(wetland.geometry) if isinstance(wetland.geometry, str) else wetland.geometry
-        if geom_geojson.get('type') == 'Feature':
-            geom_geojson = geom_geojson.get('geometry')
-        geom = ee.Geometry(geom_geojson)
+def api_timelapse_start(request):
+    from timelapse.views import api_timelapse_start as impl
+    return impl(request)
 
-        years = list(range(2013, 2025))
-        historical = {}
-        year_values = []
 
-        def get_risk_image(year):
-            start = ee.Date.fromYMD(year, 1, 1)
-            end = ee.Date.fromYMD(year, 12, 31)
-            col = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
-                .filterDate(start, end) \
-                .filterBounds(geom) \
-                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+def api_timelapse_status(request, job_id):
+    from timelapse.views import api_timelapse_status as impl
+    return impl(request, job_id)
 
-            dem = ee.Image('USGS/SRTMGL1_003')
-            slope = ee.Terrain.slope(dem).clip(geom)
-            bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
 
-            risk = ee.Image(0) \
-                .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
-                .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
-                .clip(geom)
+def api_timelapse_frames(request, job_id):
+    from timelapse.views import api_timelapse_frames as impl
+    return impl(request, job_id)
 
-            return risk
 
-        for year in years:
-            risk_img = get_risk_image(year)
-            stats = risk_img.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=geom,
-                scale=30,
-                maxPixels=1e6,
-            )
-            risk_value = stats.getInfo().get('constant')
-            if risk_value is None:
-                risk_value = 0
-            risk_value = round(float(risk_value), 3)
-            historical[str(year)] = risk_value
-            year_values.append((year, risk_value))
-
-        if len(year_values) >= 2:
-            xs = [float(year) for year, _ in year_values]
-            ys = [value for _, value in year_values]
-            x_mean = sum(xs) / len(xs)
-            y_mean = sum(ys) / len(ys)
-            numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
-            denominator = sum((x - x_mean) ** 2 for x in xs) or 1.0
-            slope = numerator / denominator
-            intercept = y_mean - slope * x_mean
-        else:
-            slope = 0.0
-            intercept = year_values[0][1] if year_values else 0.0
-
-        predictions = {}
-        for year in range(2025, 2031):
-            predictions[str(year)] = round(intercept + slope * year, 3)
-
-        avg_risk = sum(ys) / len(ys) if year_values else 0.0
-        direction = 'stable'
-        if slope > 0.01:
-            direction = 'worsening'
-        elif slope < -0.01:
-            direction = 'improving'
-
-        return JsonResponse({
-            'wetland_id': wetland.id,
-            'wetland_name': wetland.name,
-            'historical': historical,
-            'predictions': predictions,
-            'slope': round(float(slope), 4),
-            'intercept': round(float(intercept), 4),
-            'average_risk': round(float(avg_risk), 3),
-            'direction': direction,
-        })
-
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+def api_timelapse_download(request, job_id):
+    from timelapse.views import api_timelapse_download as impl
+    return impl(request, job_id)

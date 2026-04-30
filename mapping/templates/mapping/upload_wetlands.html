@@ -10,7 +10,7 @@
             <p class="text-muted">Upload multiple wetlands from GeoJSON or other formats</p>
         </div>
         <div class="col-md-4">
-            <a href="{% url 'mapping:wetland_registry' %}" class="btn btn-outline-secondary">
+            <a href="{% url 'wetlands:wetland_registry' %}" class="btn btn-outline-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Registry
             </a>
         </div>
@@ -152,7 +152,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     const defaultMsg = document.getElementById('defaultMessage');
     
     try {
-        const response = await fetch('{% url "mapping:upload_wetlands" %}', {
+        const response = await fetch('{% url "wetlands:upload_wetlands" %}', {
             method: 'POST',
             body: formData,
             headers: {

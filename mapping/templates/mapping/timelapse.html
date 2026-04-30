@@ -1,0 +1,555 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Wetland Timelapse{% endblock %}
+{% block page_title %}Wetland Timelapse Export{% endblock %}
+
+{% block extra_head %}
+<style>
+    .tl-page { display: flex; height: 100%; min-height: 0; }
+    .tl-map-wrap { flex: 1; min-height: 0; position: relative; }
+    .tl-map { width: 100%; height: 100%; }
+
+    .tl-panel {
+        width: 390px;
+        background: #fff;
+        border-left: 1px solid #e5e7eb;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .tl-section {
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .tl-section h4 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .field-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .field label {
+        font-size: 11px;
+        color: #666;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+    }
+
+    .field select,
+    .field input {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 7px 9px;
+        font-size: 13px;
+        width: 100%;
+    }
+
+    .tl-btn {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        background: #0a84ff;
+        color: white;
+        font-weight: 700;
+        padding: 10px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
+
+    .tl-btn:hover { background: #086dd2; }
+    .tl-btn:disabled { background: #9ca3af; cursor: default; }
+
+    .tl-btn.secondary {
+        background: #0f766e;
+        margin-top: 8px;
+    }
+    .tl-btn.secondary:hover { background: #0d5f59; }
+
+    .status-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px;
+        background: #fafafa;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .progress-track {
+        margin-top: 8px;
+        height: 10px;
+        border-radius: 8px;
+        background: #e5e7eb;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #14b8a6, #0a84ff);
+        width: 0%;
+        transition: width 0.25s ease;
+    }
+
+    .player-wrap {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fbfdff;
+    }
+
+    .player-img {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        background: #f3f4f6;
+    }
+
+    .player-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .ctrl-btn {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        border-radius: 7px;
+        font-size: 12px;
+        padding: 6px 8px;
+        cursor: pointer;
+    }
+
+    .ctrl-btn:hover { background: #f8fafc; }
+
+    .frame-slider {
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .tiny {
+        margin-top: 6px;
+        font-size: 12px;
+        color: #4b5563;
+    }
+
+    .frames-meta {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+
+    .download-link {
+        display: inline-block;
+        margin-top: 8px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        color: #0a84ff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tl-page">
+    <div class="tl-map-wrap">
+        <div id="timelapseMap" class="tl-map"></div>
+    </div>
+
+    <aside class="tl-panel">
+        <section class="tl-section">
+            <h4>Create Wetland Timelapse Job</h4>
+            <div class="field-grid">
+                <div class="field" style="grid-column: 1 / span 2;">
+                    <label for="wetlandSelect">Wetland</label>
+                    <select id="wetlandSelect"></select>
+                </div>
+                <div class="field">
+                    <label for="startYear">Start Year</label>
+                    <input id="startYear" type="number" value="2018" min="2013" max="2030">
+                </div>
+                <div class="field">
+                    <label for="endYear">End Year</label>
+                    <input id="endYear" type="number" value="2023" min="2013" max="2030">
+                </div>
+                <div class="field">
+                    <label for="bufferMeters">Buffer (m)</label>
+                    <input id="bufferMeters" type="number" value="100" min="0" max="5000">
+                </div>
+                <div class="field">
+                    <label for="cloudThreshold">Cloud %</label>
+                    <input id="cloudThreshold" type="number" value="20" min="0" max="100">
+                </div>
+                <div class="field">
+                    <label for="dimensions">Frame Size</label>
+                    <input id="dimensions" type="number" value="300" min="64" max="1024">
+                </div>
+                <div class="field">
+                    <label for="fps">FPS</label>
+                    <input id="fps" type="number" value="1" min="1" max="10">
+                </div>
+            </div>
+            <button id="createJobBtn" class="tl-btn">Start Export</button>
+        </section>
+
+        <section class="tl-section">
+            <h4>Job Status</h4>
+            <div class="status-box">
+                <div id="statusLine">No active job.</div>
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <div id="statusError" class="tiny"></div>
+                <a id="downloadLink" class="download-link" href="#" style="display:none;">Download GIF</a>
+            </div>
+            <a id="previewFramesBtn" class="tl-btn secondary" href="#" style="display:block; text-align:center; text-decoration:none; margin-top:12px;">Preview Frames</a>
+        </section>
+
+        <section class="tl-section" style="overflow:auto; min-height:0; display:none;">
+            <h4>Preview Frames</h4>
+            <div class="player-wrap">
+                <img id="frameImage" class="player-img" alt="Frame preview" />
+                <div class="player-controls">
+                    <button id="prevBtn" class="ctrl-btn">Prev</button>
+                    <button id="playBtn" class="ctrl-btn">Play</button>
+                    <button id="nextBtn" class="ctrl-btn">Next</button>
+                    <select id="speedSelect" class="ctrl-btn">
+                        <option value="500">0.5s</option>
+                        <option value="1000" selected>1s</option>
+                        <option value="2000">2s</option>
+                        <option value="3000">3s</option>
+                    </select>
+                </div>
+            </div>
+            <input id="frameSlider" class="frame-slider" type="range" min="0" max="0" value="0">
+            <div class="frames-meta">
+                <span id="frameYear">Year: -</span>
+                <span id="framePos">0 / 0</span>
+            </div>
+        </section>
+    </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const geojson = JSON.parse('{{ wetlands_geojson|escapejs }}');
+
+    const map = L.map('timelapseMap', { center: [-29.6, 28.2], zoom: 8 });
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google',
+        maxZoom: 20
+    }).addTo(map);
+
+    const wetlandSelect = document.getElementById('wetlandSelect');
+    const startYearEl = document.getElementById('startYear');
+    const endYearEl = document.getElementById('endYear');
+    const bufferEl = document.getElementById('bufferMeters');
+    const cloudEl = document.getElementById('cloudThreshold');
+    const dimensionsEl = document.getElementById('dimensions');
+    const fpsEl = document.getElementById('fps');
+    const createBtn = document.getElementById('createJobBtn');
+    const previewFramesBtn = document.getElementById('previewFramesBtn');
+
+    const statusLine = document.getElementById('statusLine');
+    const progressBar = document.getElementById('progressBar');
+    const statusError = document.getElementById('statusError');
+    const downloadLink = document.getElementById('downloadLink');
+
+    const frameImage = document.getElementById('frameImage');
+    const frameSlider = document.getElementById('frameSlider');
+    const frameYear = document.getElementById('frameYear');
+    const framePos = document.getElementById('framePos');
+    const prevBtn = document.getElementById('prevBtn');
+    const playBtn = document.getElementById('playBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const speedSelect = document.getElementById('speedSelect');
+
+    let selectedLayer = null;
+    let currentJobId = null;
+    let pollTimer = null;
+    let frames = [];
+    let currentFrame = 0;
+    let isPlaying = false;
+    let playTimer = null;
+
+    function getCsrfToken() {
+        const cookie = document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith('csrftoken='));
+        return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+    }
+
+    function setStatus(text, progress) {
+        statusLine.textContent = text;
+        progressBar.style.width = (progress || 0) + '%';
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearTimeout(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function stopPlayback() {
+        isPlaying = false;
+        playBtn.textContent = 'Play';
+        if (playTimer) {
+            clearTimeout(playTimer);
+            playTimer = null;
+        }
+    }
+
+    function renderFrame() {
+        if (!frames.length) {
+            frameImage.removeAttribute('src');
+            frameYear.textContent = 'Year: -';
+            framePos.textContent = '0 / 0';
+            frameSlider.min = 0;
+            frameSlider.max = 0;
+            frameSlider.value = 0;
+            return;
+        }
+
+        const frame = frames[currentFrame];
+        frameImage.src = frame.url;
+        frameYear.textContent = 'Year: ' + frame.year;
+        framePos.textContent = (currentFrame + 1) + ' / ' + frames.length;
+        frameSlider.min = 0;
+        frameSlider.max = frames.length - 1;
+        frameSlider.value = currentFrame;
+    }
+
+    function loadFrames(jobId) {
+        fetch('/api/timelapse/' + jobId + '/frames/')
+            .then(r => r.json())
+            .then(data => {
+                frames = Array.isArray(data.frames) ? data.frames : [];
+                currentFrame = 0;
+                renderFrame();
+            })
+            .catch(() => {
+                statusError.textContent = 'Could not load preview frames.';
+            });
+    }
+
+    function pollJob(jobId) {
+        fetch('/api/timelapse/' + jobId + '/status/')
+            .then(r => r.json())
+            .then(data => {
+                setStatus('Job #' + data.job_id + ': ' + data.status, data.progress_percent || 0);
+                statusError.textContent = data.error_message || '';
+
+                if (data.status === 'completed') {
+                    downloadLink.style.display = 'inline-block';
+                    downloadLink.href = '/api/timelapse/' + jobId + '/download/';
+                    loadFrames(jobId);
+                    stopPolling();
+                    createBtn.disabled = false;
+                    return;
+                }
+
+                if (data.status === 'failed') {
+                    stopPolling();
+                    createBtn.disabled = false;
+                    return;
+                }
+
+                pollTimer = setTimeout(function() { pollJob(jobId); }, 2000);
+            })
+            .catch(() => {
+                statusError.textContent = 'Status polling failed.';
+                pollTimer = setTimeout(function() { pollJob(jobId); }, 4000);
+            });
+    }
+
+    function createJob() {
+        const payload = {
+            wetland_id: Number(wetlandSelect.value),
+            start_year: Number(startYearEl.value),
+            end_year: Number(endYearEl.value),
+            buffer_meters: Number(bufferEl.value),
+            cloud_threshold: Number(cloudEl.value),
+            dimensions: Number(dimensionsEl.value),
+            frames_per_second: Number(fpsEl.value),
+        };
+
+        if (!payload.wetland_id) {
+            statusError.textContent = 'Select a wetland first.';
+            return;
+        }
+
+        if (payload.start_year > payload.end_year) {
+            statusError.textContent = 'Start year must be less than or equal to end year.';
+            return;
+        }
+
+        createBtn.disabled = true;
+        downloadLink.style.display = 'none';
+        statusError.textContent = '';
+        setStatus('Submitting job...', 0);
+        stopPolling();
+        stopPlayback();
+
+        fetch('/api/timelapse/start/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify(payload),
+        })
+            .then(async r => {
+                const data = await r.json();
+                if (!r.ok) {
+                    throw new Error(data.error || 'Failed to start job');
+                }
+                return data;
+            })
+            .then(data => {
+                currentJobId = data.job_id;
+                setStatus('Job #' + currentJobId + ' queued', 0);
+                pollJob(currentJobId);
+            })
+            .catch(err => {
+                createBtn.disabled = false;
+                statusError.textContent = err.message;
+                setStatus('No active job.', 0);
+            });
+    }
+
+    function selectWetlandOnMap(id) {
+        if (!selectedLayer) {
+            return;
+        }
+        selectedLayer.setStyle({ color: '#14b8a6', weight: 3, fillOpacity: 0.12 });
+        if (selectedLayer.feature && selectedLayer.feature.properties && selectedLayer.feature.properties.id === id) {
+            map.fitBounds(selectedLayer.getBounds(), { padding: [20, 20] });
+        }
+    }
+
+    function buildWetlandOptions() {
+        const features = geojson.features || [];
+        wetlandSelect.innerHTML = '<option value="">Choose wetland</option>';
+
+        features.forEach(feature => {
+            const props = feature.properties || {};
+            const opt = document.createElement('option');
+            opt.value = props.id;
+            opt.textContent = props.name + (props.village ? ' - ' + props.village : '');
+            wetlandSelect.appendChild(opt);
+        });
+
+        if (features.length) {
+            wetlandSelect.value = String(features[0].properties.id);
+        }
+    }
+
+    L.geoJSON(geojson, {
+        style: { color: '#0a84ff', weight: 2, fillOpacity: 0.08 },
+        onEachFeature: function(feature, layer) {
+            const p = feature.properties || {};
+            layer.bindPopup('<strong>' + (p.name || 'Wetland') + '</strong><br>Area: ' + (p.area_ha || 'N/A') + ' ha');
+            layer.on('click', function() {
+                selectedLayer = layer;
+                wetlandSelect.value = String(p.id || '');
+                selectWetlandOnMap(p.id);
+            });
+        }
+    }).addTo(map);
+
+    wetlandSelect.addEventListener('change', function() {
+        const selected = Number(wetlandSelect.value);
+        if (!selected) {
+            return;
+        }
+        map.eachLayer(function(layer) {
+            if (layer.feature && layer.feature.properties) {
+                const isMatch = Number(layer.feature.properties.id) === selected;
+                layer.setStyle({
+                    color: isMatch ? '#14b8a6' : '#0a84ff',
+                    weight: isMatch ? 3 : 2,
+                    fillOpacity: isMatch ? 0.12 : 0.08,
+                });
+                if (isMatch) {
+                    selectedLayer = layer;
+                    map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+                }
+            }
+        });
+    });
+
+    createBtn.addEventListener('click', createJob);
+
+    previewFramesBtn.addEventListener('click', function() {
+        const wetlandId = Number(wetlandSelect.value);
+        if (!wetlandId) {
+            statusError.textContent = 'Select a wetland first.';
+            return;
+        }
+        window.location.href = '/wetlands/' + wetlandId + '/timelapse/';
+    });
+
+    prevBtn.addEventListener('click', function() {
+        stopPlayback();
+        if (!frames.length) return;
+        currentFrame = Math.max(0, currentFrame - 1);
+        renderFrame();
+    });
+
+    nextBtn.addEventListener('click', function() {
+        stopPlayback();
+        if (!frames.length) return;
+        currentFrame = Math.min(frames.length - 1, currentFrame + 1);
+        renderFrame();
+    });
+
+    frameSlider.addEventListener('input', function() {
+        stopPlayback();
+        currentFrame = Number(frameSlider.value || 0);
+        renderFrame();
+    });
+
+    playBtn.addEventListener('click', function() {
+        if (!frames.length) return;
+        if (isPlaying) {
+            stopPlayback();
+            return;
+        }
+
+        isPlaying = true;
+        playBtn.textContent = 'Pause';
+
+        const step = function() {
+            if (!isPlaying) return;
+            currentFrame = (currentFrame + 1) % frames.length;
+            renderFrame();
+            playTimer = setTimeout(step, Number(speedSelect.value || 1000));
+        };
+
+        playTimer = setTimeout(step, Number(speedSelect.value || 1000));
+    });
+
+    buildWetlandOptions();
+    if (geojson.features && geojson.features.length) {
+        map.fitBounds(L.geoJSON(geojson).getBounds(), { padding: [20, 20] });
+    }
+    renderFrame();
+})();
+</script>
+{% endblock %}

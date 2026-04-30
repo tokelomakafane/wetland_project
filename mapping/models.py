@@ -155,6 +155,45 @@ class Wetland(models.Model):
         super().save(*args, **kwargs)
 
 
+class CommunityInput(models.Model):
+    """Field/community observations submitted for a wetland."""
+
+    OBSERVATION_CHOICES = [
+        ('grazing', 'Grazing'),
+        ('erosion', 'Erosion'),
+        ('invasive_species', 'Invasive species'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('critical', 'Critical'),
+        ('warning', 'Warning'),
+        ('info', 'Info'),
+        ('resolved', 'Resolved'),
+    ]
+
+    wetland = models.ForeignKey(
+        Wetland,
+        on_delete=models.CASCADE,
+        related_name='community_inputs',
+    )
+    observation = models.CharField(max_length=32, choices=OBSERVATION_CHOICES)
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES)
+    comments = models.TextField()
+    submitted_by = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['wetland', 'created_at']),
+            models.Index(fields=['severity']),
+        ]
+
+    def __str__(self):
+        return f"CommunityInput #{self.id} - {self.wetland.name} ({self.observation})"
+
+
 class WetlandMonitoringRecord(models.Model):
     """
     Time-series records of monitoring metrics per wetland.
@@ -284,3 +323,50 @@ class WetlandBoundaryChange(models.Model):
     
     def __str__(self):
         return f"{self.wetland.name} - v{self.wetland.version}"
+
+
+class TimelapseJob(models.Model):
+    """Async processing job for wetland timelapse frame generation and GIF export."""
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    wetland = models.ForeignKey(
+        Wetland,
+        on_delete=models.CASCADE,
+        related_name='timelapse_jobs',
+    )
+
+    start_year = models.IntegerField(validators=[MinValueValidator(2013)])
+    end_year = models.IntegerField(validators=[MinValueValidator(2013)])
+    buffer_meters = models.IntegerField(default=100, validators=[MinValueValidator(0)])
+    cloud_threshold = models.IntegerField(default=20, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    frames_per_second = models.IntegerField(default=1, validators=[MinValueValidator(1), MaxValueValidator(10)])
+    dimensions = models.IntegerField(default=300, validators=[MinValueValidator(64), MaxValueValidator(1024)])
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    progress_percent = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    error_message = models.TextField(blank=True)
+
+    frame_urls = models.JSONField(default=list, blank=True)
+    gif_relative_path = models.CharField(max_length=500, blank=True)
+    gif_source_url = models.URLField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['wetland', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"TimelapseJob #{self.id} - {self.wetland.name} ({self.status})"
