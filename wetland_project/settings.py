@@ -1,21 +1,32 @@
 import os
 from pathlib import Path
 from django.core.management.utils import get_random_secret_key
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', get_random_secret_key())
 
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'thuto.co.ls', 'www.thuto.co.ls']
 
 CSRF_TRUSTED_ORIGINS = [
     'https://localhost:8000',
     'https://127.0.0.1:8000',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'https://thuto.co.ls',
+    'https://www.thuto.co.ls',
 ]
+
+# Cloudflare terminates SSL; Django sees HTTP from nginx. These settings
+# tell Django that X-Forwarded-Proto: https means the original request was HTTPS.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 INSTALLED_APPS = [
     'django.contrib.admin',
