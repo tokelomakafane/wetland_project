@@ -84,13 +84,9 @@ if ! validate_input "$DOMAIN" "^[a-z0-9.-]+\.[a-z]+$"; then
     exit 1
 fi
 
-read -p "Enter your email for system notifications: " EMAIL
-if ! validate_input "$EMAIL" "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"; then
-    log_error "Invalid email format"
-    exit 1
-fi
+read -p "Enter your email for system notifications (optional): " EMAIL
 
-log_warning "Skipping Google Earth Engine configuration (can be added later)"
+# Set default values for skipped configurations
 EE_PROJECT=""
 EE_SERVICE_ACCOUNT=""
 EE_KEY_PATH=""
@@ -196,8 +192,12 @@ ENV_FILE="$APP_DIR/.env"
 cat > "$ENV_FILE" << EOF
 DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY
 DOMAIN=$DOMAIN
-EMAIL=$EMAIL
 EOF
+
+# Only add email if provided
+if [ -n "$EMAIL" ]; then
+    echo "EMAIL=$EMAIL" >> "$ENV_FILE"
+fi
 
 # Only add EE variables if provided
 if [ -n "$EE_PROJECT" ]; then
@@ -510,7 +510,7 @@ ${YELLOW}⚠ IMPORTANT - NEXT STEPS:${NC}
    • Set SSL/TLS mode to "Full"
    • Enable "Always Use HTTPS"
 
-5. ${YELLOW}(Optional) Add Earth Engine authentication later:${NC}
+3. ${YELLOW}(Optional) Add Earth Engine authentication later:${NC}
    # Upload the EE key file
    scp ee-key.json wetland@<droplet-ip>:/home/wetland/ee-key.json
    ssh wetland@<droplet-ip> chmod 400 /home/wetland/ee-key.json
@@ -523,13 +523,10 @@ ${YELLOW}⚠ IMPORTANT - NEXT STEPS:${NC}
    # Restart app
    sudo systemctl restart wetland
 
-6. ${RED}Verify deployment:${NC}
+4. ${RED}Verify deployment:${NC}
    • Check services: sudo systemctl status wetland
    • View logs: sudo journalctl -u wetland -f
    • Test app: curl http://localhost/
-
-4. ${RED}Email notification:${NC}
-   Admin email: $EMAIL
 
 ${BLUE}Useful Commands:${NC}
   • Restart app:        sudo systemctl restart wetland
