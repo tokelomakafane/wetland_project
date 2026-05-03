@@ -90,14 +90,10 @@ if ! validate_input "$EMAIL" "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$";
     exit 1
 fi
 
-read -p "Enter Google Earth Engine project name (e.g., tokelo-329815): " EE_PROJECT
-read -p "Enter Google Earth Engine service account email: " EE_SERVICE_ACCOUNT
-read -p "Enter path to Earth Engine key JSON file on this machine: " EE_KEY_PATH
-
-if [ ! -f "$EE_KEY_PATH" ]; then
-    log_error "Earth Engine key file not found: $EE_KEY_PATH"
-    exit 1
-fi
+log_warning "Skipping Google Earth Engine configuration (can be added later)"
+EE_PROJECT=""
+EE_SERVICE_ACCOUNT=""
+EE_KEY_PATH=""
 
 log_success "Configuration collected"
 
@@ -199,12 +195,18 @@ DJANGO_SECRET_KEY=$(python3 -c "from django.core.management.utils import get_ran
 ENV_FILE="$APP_DIR/.env"
 cat > "$ENV_FILE" << EOF
 DJANGO_SECRET_KEY=$DJANGO_SECRET_KEY
-EE_PROJECT=$EE_PROJECT
-EE_SERVICE_ACCOUNT=$EE_SERVICE_ACCOUNT
-EE_SERVICE_ACCOUNT_KEY=/home/$USERNAME/ee-key.json
 DOMAIN=$DOMAIN
 EMAIL=$EMAIL
 EOF
+
+# Only add EE variables if provided
+if [ -n "$EE_PROJECT" ]; then
+    cat >> "$ENV_FILE" << EOF
+EE_PROJECT=$EE_PROJECT
+EE_SERVICE_ACCOUNT=$EE_SERVICE_ACCOUNT
+EE_SERVICE_ACCOUNT_KEY=/home/$USERNAME/ee-key.json
+EOF
+fi
 
 chown "$USERNAME:$USERNAME" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
@@ -212,17 +214,21 @@ chmod 600 "$ENV_FILE"
 log_success "Environment file created: $ENV_FILE"
 
 ################################################################################
-# SECTION 8: Copy Earth Engine Key
+# SECTION 8: Copy Earth Engine Key (Optional)
 ################################################################################
 
-log "${BLUE}Copying Earth Engine service account key...${NC}"
-
-EE_KEY_DEST="/home/$USERNAME/ee-key.json"
-cp "$EE_KEY_PATH" "$EE_KEY_DEST"
-chown "$USERNAME:$USERNAME" "$EE_KEY_DEST"
-chmod 400 "$EE_KEY_DEST"
-
-log_success "Earth Engine key installed"
+if [ -n "$EE_KEY_PATH" ] && [ -f "$EE_KEY_PATH" ]; then
+    log "${BLUE}Copying Earth Engine service account key...${NC}"
+    
+    EE_KEY_DEST="/home/$USERNAME/ee-key.json"
+    cp "$EE_KEY_PATH" "$EE_KEY_DEST"
+    chown "$USERNAME:$USERNAME" "$EE_KEY_DEST"
+    chmod 400 "$EE_KEY_DEST"
+    
+    log_success "Earth Engine key installed"
+else
+    log_warning "Earth Engine key not provided (can be added later with: scp ee-key.json wetland@host:/home/wetland/)"
+fi
 
 ################################################################################
 # SECTION 9: Django Configuration
@@ -498,13 +504,26 @@ ${YELLOW}⚠ IMPORTANT - NEXT STEPS:${NC}
    source venv/bin/activate
    python manage.py changepassword admin
 
-2. ${RED}Configure Cloudflare DNS:${NC}
+4. ${RED}Configure Cloudflare DNS (Required):${NC}
    • Add A record: @ → <your-droplet-ip> (Proxied)
    • Add A record: www → <your-droplet-ip> (Proxied)
    • Set SSL/TLS mode to "Full"
    • Enable "Always Use HTTPS"
 
-3. ${RED}Verify deployment:${NC}
+5. ${YELLOW}(Optional) Add Earth Engine authentication later:${NC}
+   # Upload the EE key file
+   scp ee-key.json wetland@<droplet-ip>:/home/wetland/ee-key.json
+   ssh wetland@<droplet-ip> chmod 400 /home/wetland/ee-key.json
+   
+   # Update .env file with EE variables
+   echo "EE_PROJECT=your-project" >> /home/wetland/app/.env
+   echo "EE_SERVICE_ACCOUNT=your-sa@project.iam.gserviceaccount.com" >> /home/wetland/app/.env
+   echo "EE_SERVICE_ACCOUNT_KEY=/home/wetland/ee-key.json" >> /home/wetland/app/.env
+   
+   # Restart app
+   sudo systemctl restart wetland
+
+6. ${RED}Verify deployment:${NC}
    • Check services: sudo systemctl status wetland
    • View logs: sudo journalctl -u wetland -f
    • Test app: curl http://localhost/
