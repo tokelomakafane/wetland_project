@@ -104,6 +104,7 @@
         </div>
 
         <div class="sidebar-nav">
+            {% if user.is_authenticated and can_monitor %}
             <div class="nav-section">Main</div>
             <a href="{% url 'mapping:dashboard' %}" class="nav-item {% if active_page == 'mapping' %}active{% endif %}">
                 <span class="nav-icon">&#128506;</span>
@@ -134,7 +135,9 @@
                 <span class="nav-label">Early Warning</span>
                 <span class="badge">{{ early_warning_alert_count|default:0 }}</span>
             </a>
+            {% endif %}
 
+            {% if user.is_authenticated and can_manage_data %}
             <div class="nav-section">Data</div>
             <a href="{% url 'mapping:community' %}" class="nav-item {% if active_page == 'community' %}active{% endif %}">
                 <span class="nav-icon">&#128101;</span>
@@ -144,25 +147,31 @@
                 <span class="nav-icon">&#128752;</span>
                 <span class="nav-label">Upload Drone Image</span>
             </a>
+            {% endif %}
 
+            {% if user.is_authenticated and can_manage_users %}
             <div class="nav-section">Admin</div>
             <a href="{% url 'mapping:users' %}" class="nav-item {% if active_page == 'users' %}active{% endif %}">
                 <span class="nav-icon">&#128100;</span>
                 <span class="nav-label">Users</span>
             </a>
+            {% endif %}
         </div>
 
         <div class="sidebar-footer">
-            <div class="user-avatar">{% if user.is_authenticated %}{{ user.get_full_name|default:user.username|slice:":2"|upper }}{% else %}GK{% endif %}</div>
-            <div class="user-info">
-                {% if user.is_authenticated %}
+            {% if user.is_authenticated %}
+                <div class="user-avatar">{{ user.get_full_name|default:user.username|slice:":2"|upper }}</div>
+                <div class="user-info">
                     <span class="user-name">{{ user.get_full_name|default:user.username }}</span>
-                    <span class="user-role">{% if user.is_superuser %}Administrator{% elif user.is_staff %}Staff{% else %}User{% endif %}</span>
-                {% else %}
-                    <span class="user-name">Guest</span>
-                    <span class="user-role">Visitor</span>
-                {% endif %}
-            </div>
+                    <span class="user-role">{{ user.profile.role_label|default:"User" }}</span>
+                </div>
+            {% else %}
+                <div class="user-avatar">?</div>
+                <div class="user-info">
+                    <span class="user-name">Not logged in</span>
+                    <span class="user-role">—</span>
+                </div>
+            {% endif %}
         </div>
     </nav>
 

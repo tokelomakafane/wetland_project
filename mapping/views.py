@@ -5,8 +5,8 @@ from pathlib import Path
 from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.http import FileResponse
-from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.shortcuts import render, redirect
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
 from django import forms as django_forms
@@ -70,22 +70,24 @@ def index(request):
 
 
 def login_view(request):
-    """Render simulated login page; POST redirects to dashboard."""
-    error = None
     if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '').strip()
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
+            try:
+                role = user.profile.role
+            except Exception:
+                role = None
+            if role == 'community_member':
+                return redirect('mapping:community_portal')
             return redirect('mapping:dashboard')
-        else:
-            error = 'Invalid username or password'
-    return render(request, 'mapping/login.html', {'error': error})
+        return render(request, 'mapping/login.html', {'error': 'Invalid username or password'})
+    return render(request, 'mapping/login.html')
 
 
 def logout_view(request):
-    """Log out the current user and redirect to login."""
     logout(request)
     return redirect('mapping:login')
 
@@ -163,6 +165,14 @@ def monitor_view(request):
     })
 
 
+def community_portal_view(request):
+    """Standalone report form for Community Member role."""
+    if not request.user.is_authenticated:
+        return redirect('mapping:login')
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name').values('id', 'name', 'village')
+    return render(request, 'mapping/community_portal.html', {'wetlands': list(wetlands)})
+
+
 def alerts_view(request):
     return render(request, 'mapping/alerts.html', {'active_page': 'alerts'})
 
@@ -219,12 +229,21 @@ def community_view(request):
 
 
 def community_inputs_log_view(request):
-    """Paginated log of all community inputs from the database."""
+    """Paginated log of community inputs — community members see only their own."""
     severity_filter = request.GET.get('severity', '')
     observation_filter = request.GET.get('observation', '')
     wetland_filter = request.GET.get('wetland', '')
 
     qs = CommunityInput.objects.select_related('wetland').order_by('-created_at')
+
+    # Community members may only see their own submissions
+    try:
+        role = request.user.profile.role
+    except Exception:
+        role = None
+    if role == 'community_member':
+        own_name = request.user.get_full_name() or request.user.username
+        qs = qs.filter(submitted_by=own_name)
 
     if severity_filter:
         qs = qs.filter(severity=severity_filter)
@@ -420,7 +439,65 @@ def api_delete_community_input(request, input_id):
 
 
 def users_view(request):
-    return render(request, 'mapping/users.html', {'active_page': 'users'})
+    from django.contrib.auth.models import User as AuthUser
+    from users.models import UserProfile
+
+    # Only system admins may access this page
+    try:
+        role = request.user.profile.role
+    except Exception:
+        role = None
+    if not request.user.is_authenticated or role != 'system_admin':
+        return redirect('mapping:dashboard')
+
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'create':
+            username = request.POST.get('username', '').strip()
+            password = request.POST.get('password', '').strip()
+            first_name = request.POST.get('first_name', '').strip()
+            last_name = request.POST.get('last_name', '').strip()
+            email = request.POST.get('email', '').strip()
+            new_role = request.POST.get('role', 'community_member').strip()
+
+            if not username or not password:
+                error = 'Username and password are required.'
+            elif AuthUser.objects.filter(username=username).exists():
+                error = f'Username "{username}" is already taken.'
+            else:
+                new_user = AuthUser.objects.create_user(
+                    username=username, password=password,
+                    first_name=first_name, last_name=last_name, email=email,
+                    is_staff=(new_role == 'system_admin'),
+                    is_superuser=(new_role == 'system_admin'),
+                )
+                UserProfile.objects.create(user=new_user, role=new_role)
+                success = f'User "{username}" created successfully.'
+
+        elif action == 'delete':
+            uid = request.POST.get('user_id')
+            if str(uid) == str(request.user.id):
+                error = 'You cannot delete your own account.'
+            else:
+                try:
+                    AuthUser.objects.get(pk=uid).delete()
+                    success = 'User deleted.'
+                except AuthUser.DoesNotExist:
+                    error = 'User not found.'
+
+    users = AuthUser.objects.select_related('profile').order_by('username')
+    role_choices = UserProfile.ROLE_CHOICES
+    return render(request, 'mapping/users.html', {
+        'active_page': 'users',
+        'users': users,
+        'role_choices': role_choices,
+        'error': error,
+        'success': success,
+    })
 
 
 def ee_tile_url(request):

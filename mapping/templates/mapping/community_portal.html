@@ -1,0 +1,164 @@
+{% extends "mapping/community_base.html" %}
+
+{% block title %}Submit Field Report{% endblock %}
+
+{% block extra_head %}
+<style>
+    .portal-header { margin-bottom: 28px; }
+    .portal-header h1 { font-size: 22px; font-weight: 700; color: #1b4332; margin-bottom: 6px; }
+    .portal-header p  { font-size: 14px; color: #666; }
+
+    .portal-card {
+        background: #fff; border-radius: 12px; border: 1px solid #e0e0e0;
+        padding: 28px 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .portal-card h3 {
+        font-size: 13px; font-weight: 700; color: #1b4332;
+        text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 20px;
+    }
+
+    .pf-field { margin-bottom: 16px; }
+    .pf-field label {
+        display: block; font-size: 11px; font-weight: 700; color: #555;
+        text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px;
+    }
+    .pf-field select,
+    .pf-field textarea {
+        width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0;
+        border-radius: 8px; font-size: 14px; color: #222; font-family: inherit;
+        transition: border-color 0.15s;
+    }
+    .pf-field select:focus,
+    .pf-field textarea:focus { outline: none; border-color: #1b4332; }
+    .pf-field textarea { min-height: 110px; resize: vertical; }
+
+    .pf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    .btn-submit {
+        width: 100%; background: #1b4332; color: #fff; border: none;
+        padding: 13px; border-radius: 8px; font-size: 15px; font-weight: 700;
+        cursor: pointer; margin-top: 8px; letter-spacing: 0.3px;
+        transition: background 0.15s;
+    }
+    .btn-submit:hover { background: #2d6a4f; }
+    .btn-submit:disabled { background: #9ca3af; cursor: default; }
+
+    .status-box {
+        margin-top: 14px; padding: 12px 16px; border-radius: 8px;
+        font-size: 13px; font-weight: 500; display: none;
+    }
+    .status-box.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .status-box.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+
+    .view-log-link {
+        display: block; text-align: center; margin-top: 16px;
+        font-size: 13px; color: #1b4332; text-decoration: none; font-weight: 600;
+    }
+    .view-log-link:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-header">
+    <h1>Field Report Submission</h1>
+    <p>Select a wetland site and describe what you observed on the ground.</p>
+</div>
+
+<div class="portal-card">
+    <h3>New Observation Report</h3>
+
+    <div class="pf-field">
+        <label for="wetlandSelect">Wetland Site *</label>
+        <select id="wetlandSelect">
+            <option value="">— Select a wetland —</option>
+            {% for w in wetlands %}
+            <option value="{{ w.id }}">{{ w.name }}{% if w.village %} — {{ w.village }}{% endif %}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="pf-grid">
+        <div class="pf-field">
+            <label for="observationSelect">Observation *</label>
+            <select id="observationSelect">
+                <option value="">— Select —</option>
+                <option value="grazing">Grazing</option>
+                <option value="erosion">Erosion</option>
+                <option value="invasive_species">Invasive Species</option>
+            </select>
+        </div>
+        <div class="pf-field">
+            <label for="severitySelect">Severity *</label>
+            <select id="severitySelect">
+                <option value="">— Select —</option>
+                <option value="critical">Critical</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+                <option value="resolved">Resolved</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="pf-field">
+        <label for="commentsInput">Comments *</label>
+        <textarea id="commentsInput" placeholder="Describe the condition you observed at this wetland site…"></textarea>
+    </div>
+
+    <button id="submitBtn" class="btn-submit">Submit Report</button>
+    <div id="statusBox" class="status-box"></div>
+    <a href="{% url 'mapping:community_inputs_log' %}" class="view-log-link">View my submitted reports →</a>
+</div>
+
+<script>
+(function () {
+    const btn = document.getElementById('submitBtn');
+    const statusBox = document.getElementById('statusBox');
+
+    function getCsrf() {
+        const c = document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith('csrftoken='));
+        return c ? decodeURIComponent(c.split('=')[1]) : '';
+    }
+
+    function showStatus(msg, type) {
+        statusBox.textContent = msg;
+        statusBox.className = 'status-box ' + type;
+        statusBox.style.display = 'block';
+    }
+
+    btn.addEventListener('click', function () {
+        const wetland_id = document.getElementById('wetlandSelect').value;
+        const observation = document.getElementById('observationSelect').value;
+        const severity    = document.getElementById('severitySelect').value;
+        const comments    = document.getElementById('commentsInput').value.trim();
+
+        if (!wetland_id || !observation || !severity || !comments) {
+            showStatus('Please fill in all required fields.', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Submitting…';
+
+        fetch('/api/community-inputs/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify({ wetland_id, observation, severity, comments }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.id || data.message) {
+                showStatus('Report submitted successfully. Thank you!', 'success');
+                document.getElementById('wetlandSelect').value = '';
+                document.getElementById('observationSelect').value = '';
+                document.getElementById('severitySelect').value = '';
+                document.getElementById('commentsInput').value = '';
+            } else {
+                showStatus(data.error || 'Submission failed. Please try again.', 'error');
+            }
+        })
+        .catch(() => showStatus('Network error. Please try again.', 'error'))
+        .finally(() => { btn.disabled = false; btn.textContent = 'Submit Report'; });
+    });
+})();
+</script>
+{% endblock %}

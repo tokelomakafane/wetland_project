@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Community Report{% endblock %} – Lesotho Wetland Monitoring</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; min-height: 100vh; }
+
+        .cm-topbar {
+            background: #1b4332; color: #fff;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 28px; height: 54px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .cm-brand { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+        .cm-brand .icon { font-size: 22px; }
+        .cm-user { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+        .cm-avatar {
+            width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px;
+        }
+        .cm-user-details { line-height: 1.3; }
+        .cm-user-name { font-weight: 600; font-size: 13px; }
+        .cm-user-role { font-size: 11px; opacity: 0.7; }
+        .cm-logout {
+            background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+            color: #fff; padding: 5px 14px; border-radius: 5px; font-size: 12px;
+            text-decoration: none; cursor: pointer;
+        }
+        .cm-logout:hover { background: rgba(255,255,255,0.25); }
+
+        .cm-content { padding: 36px 24px; max-width: 700px; margin: 0 auto; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="cm-topbar">
+        <div class="cm-brand">
+            <span class="icon">&#127758;</span>
+            Lesotho Wetland Monitoring
+        </div>
+        <div class="cm-user">
+            <div class="cm-avatar">{{ request.user.get_full_name|default:request.user.username|slice:":2"|upper }}</div>
+            <div class="cm-user-details">
+                <div class="cm-user-name">{{ request.user.get_full_name|default:request.user.username }}</div>
+                <div class="cm-user-role">{{ request.user.profile.role_label|default:"Community Member" }}</div>
+            </div>
+            <a href="{% url 'mapping:logout' %}" class="cm-logout">Logout</a>
+        </div>
+    </div>
+    <div class="cm-content">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

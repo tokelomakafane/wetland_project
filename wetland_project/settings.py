@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'early_warning',
     'wetlands',
     'timelapse',
+    'users',
 ]
 
 MIDDLEWARE = [
@@ -40,6 +41,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'mapping.middleware.LoginRequiredMiddleware',
 ]
 
 ROOT_URLCONF = 'wetland_project.urls'
@@ -56,6 +58,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'mapping.context_processors.early_warning_alert_count',
+                'mapping.context_processors.user_role_context',
             ],
         },
     },
