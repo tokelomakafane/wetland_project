@@ -16,6 +16,7 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
+        overflow-y: auto;
     }
 
     .tl-section {
@@ -75,6 +76,24 @@
 
     .submit-btn:hover { background: #086dd2; }
     .submit-btn:disabled { background: #9ca3af; cursor: default; }
+
+    .log-btn {
+        display: block;
+        width: 100%;
+        border: 1.5px solid #0a84ff;
+        border-radius: 8px;
+        background: transparent;
+        color: #0a84ff;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 9px 10px;
+        cursor: pointer;
+        margin-top: 8px;
+        text-align: center;
+        text-decoration: none;
+        transition: background 0.15s, color 0.15s;
+    }
+    .log-btn:hover { background: #0a84ff; color: #fff; }
 
     .status-box {
         margin-top: 10px;
@@ -142,6 +161,7 @@
 
             <button id="submitCommunityInputBtn" class="submit-btn">Submit Community Input</button>
             <div id="communityInputStatus" class="status-box" style="display:none;"></div>
+            <a href="{% url 'mapping:community_inputs_log' %}" class="log-btn">&#128203; View All Community Inputs</a>
         </section>
     </aside>
 </div>

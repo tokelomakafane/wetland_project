@@ -1,0 +1,361 @@
+{% extends "mapping/base.html" %}
+
+{% block title %}Community Inputs Log{% endblock %}
+{% block page_title %}Community Inputs Log{% endblock %}
+
+{% block extra_head %}
+<style>
+    .log-page { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+    /* ── Toolbar ── */
+    .log-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 12px;
+        margin-bottom: 20px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+    }
+    .log-toolbar .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 160px;
+    }
+    .log-toolbar label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #6b7280;
+    }
+    .log-toolbar select {
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 13px;
+        background: #fff;
+        color: #111;
+    }
+    .log-toolbar .filter-actions {
+        display: flex;
+        gap: 8px;
+        align-self: flex-end;
+    }
+    .btn-apply {
+        padding: 8px 18px;
+        border: none;
+        border-radius: 8px;
+        background: #0a84ff;
+        color: #fff;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+    }
+    .btn-apply:hover { background: #086dd2; }
+    .btn-clear {
+        padding: 8px 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: #fff;
+        color: #555;
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: none;
+    }
+    .btn-clear:hover { background: #f3f4f6; }
+
+    .log-count {
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 16px;
+    }
+    .log-count strong { color: #111; }
+
+    /* ── Cards grid ── */
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
+    }
+
+    .input-card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: box-shadow 0.15s;
+    }
+    .input-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+
+    .card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 14px 16px 10px;
+        gap: 10px;
+    }
+    .card-header-left { flex: 1; min-width: 0; }
+    .card-wetland {
+        font-size: 14px;
+        font-weight: 700;
+        color: #111;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .card-village {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Severity badge */
+    .badge-severity {
+        flex-shrink: 0;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 20px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .sev-critical { background: #fee2e2; color: #b91c1c; }
+    .sev-warning  { background: #fef3c7; color: #92400e; }
+    .sev-info     { background: #dbeafe; color: #1d4ed8; }
+    .sev-resolved { background: #d1fae5; color: #065f46; }
+
+    .card-body {
+        padding: 0 16px 14px;
+        flex: 1;
+    }
+
+    /* Observation pill */
+    .obs-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 20px;
+        background: #f0f4ff;
+        color: #3b5bdb;
+        margin-bottom: 10px;
+    }
+
+    .card-comments {
+        font-size: 13.5px;
+        color: #374151;
+        line-height: 1.55;
+    }
+
+    .card-footer {
+        border-top: 1px solid #f3f4f6;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .card-submitter {
+        font-size: 12px;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .card-submitter .avatar {
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: #0571b0;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .card-date {
+        font-size: 11px;
+        color: #9ca3af;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 60px 20px;
+        color: #9ca3af;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Pagination ── */
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        margin-top: 28px;
+        flex-wrap: wrap;
+    }
+    .page-link {
+        padding: 6px 13px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: #fff;
+        color: #374151;
+        font-size: 13px;
+        text-decoration: none;
+        transition: background 0.12s;
+    }
+    .page-link:hover { background: #f3f4f6; }
+    .page-link.active {
+        background: #0a84ff;
+        border-color: #0a84ff;
+        color: #fff;
+        font-weight: 700;
+    }
+    .page-link.disabled {
+        opacity: 0.4;
+        pointer-events: none;
+    }
+
+    .back-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #0a84ff;
+        text-decoration: none;
+        margin-bottom: 16px;
+    }
+    .back-btn:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="log-page">
+
+    <a href="{% url 'mapping:community' %}" class="back-btn">&#8592; Back to Community Inputs</a>
+
+    <!-- Filters -->
+    <form method="get" class="log-toolbar">
+        <div class="filter-group">
+            <label for="f-severity">Severity</label>
+            <select id="f-severity" name="severity">
+                <option value="">All severities</option>
+                {% for val, label in severity_choices %}
+                    <option value="{{ val }}" {% if severity_filter == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label for="f-observation">Observation</label>
+            <select id="f-observation" name="observation">
+                <option value="">All observations</option>
+                {% for val, label in observation_choices %}
+                    <option value="{{ val }}" {% if observation_filter == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label for="f-wetland">Wetland</label>
+            <select id="f-wetland" name="wetland">
+                <option value="">All wetlands</option>
+                {% for w in wetlands %}
+                    <option value="{{ w.id }}" {% if wetland_filter == w.id|stringformat:"s" %}selected{% endif %}>{{ w.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-actions">
+            <button type="submit" class="btn-apply">Filter</button>
+            <a href="{% url 'mapping:community_inputs_log' %}" class="btn-clear">Clear</a>
+        </div>
+    </form>
+
+    <p class="log-count">Showing <strong>{{ page_obj.start_index }}–{{ page_obj.end_index }}</strong> of <strong>{{ total_count }}</strong> community input{{ total_count|pluralize }}</p>
+
+    <!-- Cards -->
+    <div class="cards-grid">
+        {% for entry in page_obj %}
+        <article class="input-card">
+            <div class="card-header">
+                <div class="card-header-left">
+                    <div class="card-wetland">{{ entry.wetland.name }}</div>
+                    {% if entry.wetland.village %}
+                        <div class="card-village">&#128205; {{ entry.wetland.village }}</div>
+                    {% endif %}
+                </div>
+                <span class="badge-severity sev-{{ entry.severity }}">{{ entry.get_severity_display }}</span>
+            </div>
+
+            <div class="card-body">
+                <div class="obs-pill">
+                    {% if entry.observation == 'grazing' %}&#128004;
+                    {% elif entry.observation == 'erosion' %}&#127755;
+                    {% else %}&#127807;{% endif %}
+                    {{ entry.get_observation_display }}
+                </div>
+                <p class="card-comments">{{ entry.comments }}</p>
+            </div>
+
+            <div class="card-footer">
+                <span class="card-submitter">
+                    <span class="avatar">{{ entry.submitted_by|default:"?"|slice:":2"|upper }}</span>
+                    {{ entry.submitted_by|default:"Anonymous" }}
+                </span>
+                <span class="card-date">{{ entry.created_at|date:"d M Y, H:i" }}</span>
+            </div>
+        </article>
+        {% empty %}
+        <div class="empty-state">
+            <div class="icon">&#128203;</div>
+            <p>No community inputs found{% if severity_filter or observation_filter or wetland_filter %} for the selected filters{% endif %}.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <nav class="pagination">
+        {% if page_obj.has_previous %}
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&severity={{ severity_filter }}&observation={{ observation_filter }}&wetland={{ wetland_filter }}">&#8592; Prev</a>
+        {% else %}
+            <span class="page-link disabled">&#8592; Prev</span>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if num == page_obj.number %}
+                <span class="page-link active">{{ num }}</span>
+            {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+                <a class="page-link" href="?page={{ num }}&severity={{ severity_filter }}&observation={{ observation_filter }}&wetland={{ wetland_filter }}">{{ num }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}&severity={{ severity_filter }}&observation={{ observation_filter }}&wetland={{ wetland_filter }}">Next &#8594;</a>
+        {% else %}
+            <span class="page-link disabled">Next &#8594;</span>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+</div>
+{% endblock %}

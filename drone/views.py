@@ -83,7 +83,8 @@ def api_drone_image_analysis(request):
     today = timezone.now()
     rel_path = os.path.join('wetland_uploads', str(today.year), f'{today.month:02d}', f'{uuid.uuid4().hex}.png')
     saved_path = default_storage.save(rel_path, ContentFile(raw_bytes))
-    saved_url = f"{settings.MEDIA_URL}{str(saved_path).replace('\\', '/')}"
+    normalized_path = str(saved_path).replace('\\', '/')
+    saved_url = f"{settings.MEDIA_URL}{normalized_path}"
 
     analysis_metrics = _derive_uploaded_image_metrics(image_features)
     inference = _infer_wetland_state(image_features, analysis_metrics)

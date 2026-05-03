@@ -2,10 +2,11 @@ import json
 import os
 from pathlib import Path
 
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.http import FileResponse
-from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.shortcuts import render, redirect
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
 from django import forms as django_forms
@@ -69,22 +70,24 @@ def index(request):
 
 
 def login_view(request):
-    """Render simulated login page; POST redirects to dashboard."""
-    error = None
     if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '').strip()
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
+            try:
+                role = user.profile.role
+            except Exception:
+                role = None
+            if role == 'community_member':
+                return redirect('mapping:community_portal')
             return redirect('mapping:dashboard')
-        else:
-            error = 'Invalid username or password'
-    return render(request, 'mapping/login.html', {'error': error})
+        return render(request, 'mapping/login.html', {'error': 'Invalid username or password'})
+    return render(request, 'mapping/login.html')
 
 
 def logout_view(request):
-    """Log out the current user and redirect to login."""
     logout(request)
     return redirect('mapping:login')
 
@@ -95,7 +98,79 @@ def dashboard(request):
 
 
 def monitor_view(request):
-    return render(request, 'mapping/monitor.html', {'active_page': 'monitor'})
+    import json as _json
+    from .models import Wetland
+
+    risk_to_status = {'low': 'healthy', 'moderate': 'critical', 'high': 'severe', 'unknown': 'healthy'}
+    obs_to_threat = {'erosion': 'erosion', 'invasive_species': 'species', 'grazing': 'trampling'}
+
+    def _centroid(geometry_str):
+        try:
+            geom = _json.loads(geometry_str)
+            if geom.get('type') == 'Feature':
+                geom = geom['geometry']
+            coords = geom.get('coordinates', [])
+            if geom.get('type') == 'Polygon' and coords:
+                ring = coords[0]
+                return (
+                    round(sum(c[1] for c in ring) / len(ring), 6),
+                    round(sum(c[0] for c in ring) / len(ring), 6),
+                )
+        except Exception:
+            pass
+        return None, None
+
+    wetlands_data = []
+    qs = Wetland.objects.filter(is_current=True).prefetch_related('monitoring_records', 'community_inputs')
+    for w in qs:
+        lat, lng = _centroid(w.geometry)
+        if lat is None:
+            continue
+
+        record = w.monitoring_records.order_by('-year').first()
+
+        if record and record.risk_class:
+            status = risk_to_status.get(record.risk_class, risk_to_status.get(w.risk_level, 'healthy'))
+        else:
+            status = risk_to_status.get(w.risk_level, 'healthy')
+
+        ndvi_val = round(record.ndvi_mean, 2) if record and record.ndvi_mean is not None else None
+        record_year = record.year if record else None
+
+        latest_input = w.community_inputs.filter(severity__in=['critical', 'warning']).order_by('-created_at').first()
+        threat = obs_to_threat.get(latest_input.observation) if latest_input else None
+
+        note = w.description or (record.notes if record else '') or ''
+
+        wetlands_data.append({
+            'id': w.id,
+            'name': w.name,
+            'district': w.village or 'Lesotho',
+            'lat': lat,
+            'lng': lng,
+            'status': status,
+            'ndvi': ndvi_val,
+            'area_ha': w.area_ha,
+            'threat': threat,
+            'note': note,
+            'record_year': record_year,
+            'health_score': None,
+            'health_label': None,
+        })
+
+    return render(request, 'mapping/monitor.html', {
+        'active_page': 'monitor',
+        'wetlands_json': _json.dumps(wetlands_data),
+        'wetland_count': len(wetlands_data),
+    })
+
+
+def community_portal_view(request):
+    """Standalone report form for Community Member role."""
+    if not request.user.is_authenticated:
+        return redirect('mapping:login')
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name').values('id', 'name', 'village')
+    return render(request, 'mapping/community_portal.html', {'wetlands': list(wetlands)})
 
 
 def alerts_view(request):
@@ -151,6 +226,52 @@ def community_view(request):
         'wetlands_geojson': json.dumps({'type': 'FeatureCollection', 'features': features}),
     }
     return render(request, 'mapping/community.html', context)
+
+
+def community_inputs_log_view(request):
+    """Paginated log of community inputs — community members see only their own."""
+    severity_filter = request.GET.get('severity', '')
+    observation_filter = request.GET.get('observation', '')
+    wetland_filter = request.GET.get('wetland', '')
+
+    qs = CommunityInput.objects.select_related('wetland').order_by('-created_at')
+
+    # Community members may only see their own submissions
+    try:
+        role = request.user.profile.role
+    except Exception:
+        role = None
+    if role == 'community_member':
+        own_name = request.user.get_full_name() or request.user.username
+        qs = qs.filter(submitted_by=own_name)
+
+    if severity_filter:
+        qs = qs.filter(severity=severity_filter)
+    if observation_filter:
+        qs = qs.filter(observation=observation_filter)
+    if wetland_filter:
+        try:
+            qs = qs.filter(wetland_id=int(wetland_filter))
+        except (TypeError, ValueError):
+            pass
+
+    paginator = Paginator(qs, 12)
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+
+    wetlands = Wetland.objects.filter(is_current=True).order_by('name').values('id', 'name')
+
+    return render(request, 'mapping/community_inputs_log.html', {
+        'active_page': 'community',
+        'page_obj': page_obj,
+        'wetlands': list(wetlands),
+        'severity_filter': severity_filter,
+        'observation_filter': observation_filter,
+        'wetland_filter': wetland_filter,
+        'severity_choices': CommunityInput.SEVERITY_CHOICES,
+        'observation_choices': CommunityInput.OBSERVATION_CHOICES,
+        'total_count': paginator.count,
+    })
 
 
 def api_create_community_input(request):
@@ -318,7 +439,65 @@ def api_delete_community_input(request, input_id):
 
 
 def users_view(request):
-    return render(request, 'mapping/users.html', {'active_page': 'users'})
+    from django.contrib.auth.models import User as AuthUser
+    from users.models import UserProfile
+
+    # Only system admins may access this page
+    try:
+        role = request.user.profile.role
+    except Exception:
+        role = None
+    if not request.user.is_authenticated or role != 'system_admin':
+        return redirect('mapping:dashboard')
+
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'create':
+            username = request.POST.get('username', '').strip()
+            password = request.POST.get('password', '').strip()
+            first_name = request.POST.get('first_name', '').strip()
+            last_name = request.POST.get('last_name', '').strip()
+            email = request.POST.get('email', '').strip()
+            new_role = request.POST.get('role', 'community_member').strip()
+
+            if not username or not password:
+                error = 'Username and password are required.'
+            elif AuthUser.objects.filter(username=username).exists():
+                error = f'Username "{username}" is already taken.'
+            else:
+                new_user = AuthUser.objects.create_user(
+                    username=username, password=password,
+                    first_name=first_name, last_name=last_name, email=email,
+                    is_staff=(new_role == 'system_admin'),
+                    is_superuser=(new_role == 'system_admin'),
+                )
+                UserProfile.objects.create(user=new_user, role=new_role)
+                success = f'User "{username}" created successfully.'
+
+        elif action == 'delete':
+            uid = request.POST.get('user_id')
+            if str(uid) == str(request.user.id):
+                error = 'You cannot delete your own account.'
+            else:
+                try:
+                    AuthUser.objects.get(pk=uid).delete()
+                    success = 'User deleted.'
+                except AuthUser.DoesNotExist:
+                    error = 'User not found.'
+
+    users = AuthUser.objects.select_related('profile').order_by('username')
+    role_choices = UserProfile.ROLE_CHOICES
+    return render(request, 'mapping/users.html', {
+        'active_page': 'users',
+        'users': users,
+        'role_choices': role_choices,
+        'error': error,
+        'success': success,
+    })
 
 
 def ee_tile_url(request):

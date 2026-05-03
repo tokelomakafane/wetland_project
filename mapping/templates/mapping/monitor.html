@@ -9,52 +9,127 @@
     .monitor-container { display: flex; height: 100%; }
     .monitor-map { flex: 1; min-height: 0; }
     .monitor-panel {
-        width: 340px; background: #fff; border-left: 1px solid #e0e0e0;
-        overflow-y: auto; padding: 0;
+        width: 360px; background: #fff; border-left: 1px solid #e0e0e0;
+        overflow-y: auto; padding: 0; display: flex; flex-direction: column;
     }
+
+    /* ── Panel header ── */
     .panel-header {
-        padding: 16px 18px; border-bottom: 1px solid #eee;
-        background: #f8f9fa;
+        padding: 14px 18px; border-bottom: 1px solid #eee;
+        background: #1b4332;
     }
-    .panel-header h3 { font-size: 15px; color: #333; margin-bottom: 4px; }
-    .panel-header p { font-size: 12px; color: #888; }
+    .panel-header h3 { font-size: 15px; color: #fff; margin-bottom: 2px; }
+    .panel-header p { font-size: 11px; color: rgba(255,255,255,0.65); margin: 0; }
 
-    .summary-row {
-        display: flex; gap: 8px; padding: 12px 18px;
-        border-bottom: 1px solid #f0f0f0;
-    }
-    .summary-badge {
-        flex: 1; text-align: center; padding: 10px 6px;
-        border-radius: 8px; font-size: 11px; font-weight: 600;
-    }
-    .summary-badge .count { font-size: 22px; font-weight: 700; display: block; }
-    .badge-healthy { background: #e8f5e9; color: #2e7d32; }
-    .badge-critical { background: #fff3e0; color: #e65100; }
-    .badge-severe { background: #ffebee; color: #c62828; }
 
+    /* ── Site list ── */
     .site-list { list-style: none; padding: 0; margin: 0; }
     .site-item {
-        padding: 12px 18px; border-bottom: 1px solid #f5f5f5;
+        padding: 11px 18px; border-bottom: 1px solid #f5f5f5;
         cursor: pointer; transition: background 0.15s;
     }
     .site-item:hover { background: #f8f9fa; }
-    .site-item.selected { background: #e3f2fd; border-left: 3px solid #1976d2; }
-    .site-name { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 3px; }
+    .site-item.selected { background: #e8f5e9; border-left: 3px solid #1b4332; }
+    .site-name { font-size: 13px; font-weight: 600; color: #222; margin-bottom: 2px; }
     .site-district { font-size: 11px; color: #999; margin-bottom: 6px; }
-    .site-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .site-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .status-pill {
         font-size: 10px; font-weight: 700; padding: 3px 10px;
-        border-radius: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+        border-radius: 12px; text-transform: uppercase; letter-spacing: 0.4px;
     }
     .status-healthy { background: #c8e6c9; color: #1b5e20; }
     .status-critical { background: #ffe0b2; color: #bf360c; }
-    .status-severe { background: #ffcdd2; color: #b71c1c; }
+    .status-severe  { background: #ffcdd2; color: #b71c1c; }
     .threat-tag {
-        font-size: 10px; padding: 2px 8px; border-radius: 4px;
+        font-size: 10px; padding: 2px 7px; border-radius: 4px;
         background: #f0f0f0; color: #555;
     }
 
-    /* Popup styles */
+    /* ── Health detail card ── */
+    #healthDetail {
+        margin: 0; border-bottom: 1px solid #e0e0e0;
+        background: #fafafa;
+    }
+    .hd-header {
+        background: #1b4332; color: #fff;
+        padding: 10px 18px; font-size: 13px; font-weight: 700;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .hd-header .hd-year { font-size: 11px; font-weight: 400; opacity: 0.7; }
+    .hd-metrics {
+        padding: 12px 18px 0;
+    }
+    .hd-metric-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 0; border-bottom: 1px solid #f0f0f0;
+        font-size: 12px;
+    }
+    .hd-metric-row:last-child { border-bottom: none; }
+    .hd-metric-name {
+        width: 50px; font-weight: 700; color: #1b4332; font-size: 12px;
+    }
+    .hd-metric-bar-wrap {
+        flex: 1; background: #e8e8e8; border-radius: 4px; height: 8px; overflow: hidden;
+    }
+    .hd-metric-bar {
+        height: 100%; border-radius: 4px; transition: width 0.4s;
+    }
+    .bar-0 { background: #c62828; width: 16%; }
+    .bar-1 { background: #e65100; width: 50%; }
+    .bar-2 { background: #2e7d32; width: 100%; }
+    .bar-na { background: #ccc; width: 0%; }
+    .hd-metric-val { width: 42px; text-align: right; color: #444; font-size: 11px; }
+    .hd-metric-band {
+        width: 60px; font-size: 10px; font-weight: 600; text-align: center;
+        padding: 2px 4px; border-radius: 3px;
+    }
+    .band-good     { background: #c8e6c9; color: #1b5e20; }
+    .band-moderate { background: #ffe0b2; color: #bf360c; }
+    .band-poor     { background: #ffcdd2; color: #b71c1c; }
+    .band-na       { background: #f0f0f0; color: #999; }
+
+    /* ── Year slider inside detail card ── */
+    .hd-slider-wrap {
+        padding: 10px 18px 8px; background: #f0f4f0;
+        border-bottom: 1px solid #dde8dd;
+    }
+    .hd-slider-label {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 11px; font-weight: 600; color: #444; margin-bottom: 6px;
+    }
+    .year-badge {
+        background: #1b4332; color: #fff; padding: 3px 10px;
+        border-radius: 12px; font-size: 12px; font-weight: 700;
+    }
+    .hd-slider-row {
+        display: flex; align-items: center; gap: 8px;
+    }
+    .hd-slider-row input[type=range] {
+        flex: 1; accent-color: #1b4332; cursor: pointer;
+    }
+    .hd-slider-edge { font-size: 10px; color: #888; }
+    .hd-loading {
+        font-size: 11px; color: #1b4332; margin-top: 4px;
+        text-align: center; font-style: italic;
+    }
+
+    .hd-score-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 18px; border-top: 1px solid #e0e0e0;
+    }
+    .hd-score-label { font-size: 11px; color: #666; flex: 1; }
+    .hd-score-label strong { display: block; font-size: 13px; color: #222; }
+    .hd-badge {
+        font-size: 13px; font-weight: 800; padding: 8px 18px;
+        border-radius: 8px; letter-spacing: 0.5px; text-align: center;
+        min-width: 90px;
+    }
+    .badge-HEALTHY  { background: #2e7d32; color: #fff; }
+    .badge-FAIR     { background: #e65100; color: #fff; }
+    .badge-DEGRADED { background: #c62828; color: #fff; }
+    .badge-unknown  { background: #9e9e9e; color: #fff; }
+
+    /* ── Popup styles ── */
     .wetland-popup { min-width: 220px; }
     .wetland-popup h4 { font-size: 14px; margin: 0 0 6px 0; color: #1a1a1a; }
     .wetland-popup .popup-status {
@@ -64,23 +139,74 @@
     .wetland-popup table { width: 100%; font-size: 12px; border-collapse: collapse; }
     .wetland-popup table td { padding: 3px 0; }
     .wetland-popup table td:first-child { color: #888; width: 90px; }
-    .wetland-popup .threat-label {
+    .popup-health-badge {
+        margin-top: 8px; display: inline-block; padding: 3px 12px;
+        border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.4px;
+    }
+    .threat-label {
         display: inline-block; margin-top: 4px; padding: 2px 8px;
         border-radius: 4px; font-size: 11px; font-weight: 600;
     }
-    .threat-erosion { background: #d7ccc8; color: #4e342e; }
-    .threat-species { background: #e1bee7; color: #6a1b9a; }
+    .threat-erosion     { background: #d7ccc8; color: #4e342e; }
+    .threat-species     { background: #e1bee7; color: #6a1b9a; }
     .threat-temperature { background: #ffccbc; color: #bf360c; }
-    .threat-shape { background: #b3e5fc; color: #01579b; }
-    .threat-trampling { background: #dcedc8; color: #33691e; }
-
+    .threat-shape       { background: #b3e5fc; color: #01579b; }
+    .threat-trampling   { background: #dcedc8; color: #33691e; }
     .leaflet-popup-content-wrapper { border-radius: 10px; }
 
-    /* Legend */
+    /* ── Health metrics guide ── */
+    .metrics-guide {
+        border-top: 2px solid #1b4332; margin-top: auto;
+    }
+    .guide-toggle {
+        width: 100%; background: #1b4332; color: #fff;
+        border: none; padding: 10px 18px; text-align: left;
+        font-size: 12px; font-weight: 700; cursor: pointer;
+        display: flex; justify-content: space-between; align-items: center;
+        letter-spacing: 0.4px;
+    }
+    .guide-toggle:hover { background: #2d6a4f; }
+    .guide-content { display: none; padding: 0; }
+    .guide-content.open { display: block; }
+    .guide-subtitle {
+        font-size: 11px; color: #666; padding: 10px 18px 6px;
+        font-style: italic; border-bottom: 1px solid #eee;
+    }
+    .guide-table {
+        width: 100%; border-collapse: collapse; font-size: 11px;
+    }
+    .guide-table thead tr { background: #1b4332; color: #fff; }
+    .guide-table thead th { padding: 8px 12px; text-align: left; font-size: 11px; }
+    .guide-table tbody tr { border-bottom: 1px solid #f0f0f0; }
+    .guide-table tbody tr:nth-child(even) { background: #f8f9fa; }
+    .guide-table td { padding: 9px 12px; vertical-align: top; }
+    .guide-table td:first-child { font-weight: 700; color: #1b4332; font-size: 12px; width: 56px; }
+    .guide-table td:nth-child(2) { color: #2d6a4f; font-family: monospace; font-size: 11px; }
+    .guide-scoring-header {
+        background: #1b4332; color: #fff; text-align: center;
+        padding: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+    }
+    .guide-scoring-row {
+        display: flex; padding: 10px 12px; gap: 8px;
+    }
+    .guide-scoring-desc {
+        flex: 1; font-size: 11px; color: #555; padding: 10px 12px;
+        line-height: 1.5; border-right: 1px solid #eee;
+    }
+    .guide-bands { display: flex; flex-direction: column; gap: 6px; flex: 1; justify-content: center; padding: 10px 0; }
+    .guide-band-item {
+        text-align: center; padding: 6px 10px; border-radius: 6px;
+        font-weight: 800; font-size: 11px; line-height: 1.3;
+    }
+    .gb-healthy  { background: #2e7d32; color: #fff; }
+    .gb-fair     { background: #e65100; color: #fff; }
+    .gb-degraded { background: #c62828; color: #fff; }
+    .gb-sub      { font-size: 10px; font-weight: 400; opacity: 0.85; }
+
+    /* ── Legend ── */
     .map-legend {
         background: white; padding: 10px 14px; border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 12px;
-        line-height: 22px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15); font-size: 12px; line-height: 22px;
     }
     .map-legend h4 { margin: 0 0 6px 0; font-size: 13px; }
     .legend-dot {
@@ -93,194 +219,319 @@
 {% block content %}
 <div class="monitor-container">
     <div id="monitorMap" class="monitor-map"></div>
+
     <div class="monitor-panel">
+        <!-- Header -->
         <div class="panel-header">
-            <h3>Wetland Health Overview</h3>
-            <p>10 monitored wetland sites across Lesotho</p>
+            <h3>Wetland Health Monitoring</h3>
+            <p>{{ wetland_count }} monitored wetland site{{ wetland_count|pluralize }} &mdash; Lesotho</p>
         </div>
-        <div class="summary-row">
-            <div class="summary-badge badge-healthy">
-                <span class="count" id="countHealthy">0</span> Healthy
+
+
+        <!-- Health detail card (shown on selection) -->
+        <div id="healthDetail" style="display:none">
+            <div class="hd-header">
+                <span id="hdName">—</span>
+                <span class="hd-year" id="hdYear"></span>
             </div>
-            <div class="summary-badge badge-critical">
-                <span class="count" id="countCritical">0</span> Critical
+
+            <!-- Year slider -->
+            <div class="hd-slider-wrap">
+                <div class="hd-slider-label">
+                    <span>Year</span>
+                    <span class="year-badge" id="sliderYearLabel">2024</span>
+                </div>
+                <div class="hd-slider-row">
+                    <span class="hd-slider-edge">2014</span>
+                    <input type="range" id="healthYearSlider" min="2014" max="2024" value="2024" step="1">
+                    <span class="hd-slider-edge">2024</span>
+                </div>
+                <div id="hdLoading" class="hd-loading" style="display:none">Computing…</div>
             </div>
-            <div class="summary-badge badge-severe">
-                <span class="count" id="countSevere">0</span> Severe
+
+            <div class="hd-metrics">
+                <div class="hd-metric-row">
+                    <span class="hd-metric-name">MNDWI</span>
+                    <div class="hd-metric-bar-wrap"><div class="hd-metric-bar" id="barMndwi"></div></div>
+                    <span class="hd-metric-val" id="valMndwi"></span>
+                    <span class="hd-metric-band" id="bandMndwi"></span>
+                </div>
+                <div class="hd-metric-row">
+                    <span class="hd-metric-name">NDVI</span>
+                    <div class="hd-metric-bar-wrap"><div class="hd-metric-bar" id="barNdvi"></div></div>
+                    <span class="hd-metric-val" id="valNdvi"></span>
+                    <span class="hd-metric-band" id="bandNdvi"></span>
+                </div>
+                <div class="hd-metric-row">
+                    <span class="hd-metric-name">NDMI</span>
+                    <div class="hd-metric-bar-wrap"><div class="hd-metric-bar" id="barNdmi"></div></div>
+                    <span class="hd-metric-val" id="valNdmi"></span>
+                    <span class="hd-metric-band" id="bandNdmi"></span>
+                </div>
+            </div>
+            <div class="hd-score-row">
+                <div class="hd-score-label">
+                    Health Assessment Score<br>
+                    <strong id="hdScoreNum">—</strong>
+                </div>
+                <div class="hd-badge" id="hdBadge">—</div>
             </div>
         </div>
+
+        <!-- Site list -->
         <ul class="site-list" id="siteList"></ul>
+
+        <!-- Health Metrics Reference (collapsible) -->
+        <div class="metrics-guide">
+            <button class="guide-toggle" id="guideToggle">
+                HEALTH METRICS REFERENCE <span id="guideArrow">▼</span>
+            </button>
+            <div class="guide-content" id="guideContent">
+                <p class="guide-subtitle">Spectral indices — computed annually from Sentinel-2 Level 2A (cloud filter &lt; 20%)</p>
+                <table class="guide-table">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Formula</th>
+                            <th>Thresholds</th>
+                            <th>What It Measures</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>MNDWI</td>
+                            <td>(B3 &minus; B11)<br>&mdash;&mdash;&mdash;&mdash;<br>(B3 + B11)</td>
+                            <td>
+                                &gt; 0.3 &nbsp;Strong water presence<br>
+                                0.1&ndash;0.3 &nbsp;Moderate moisture<br>
+                                &lt; 0.1 &nbsp;Low moisture / dry
+                            </td>
+                            <td>Water presence &amp; overall moisture content of the wetland</td>
+                        </tr>
+                        <tr>
+                            <td>NDVI</td>
+                            <td>(B8 &minus; B4)<br>&mdash;&mdash;&mdash;&mdash;<br>(B8 + B4)</td>
+                            <td>
+                                &gt; 0.4 &nbsp;Healthy vegetation<br>
+                                0.2&ndash;0.4 &nbsp;Fair / moderate<br>
+                                &lt; 0.2 &nbsp;Sparse / stressed
+                            </td>
+                            <td>Vegetation health &amp; canopy density &mdash; primary degradation indicator</td>
+                        </tr>
+                        <tr>
+                            <td>NDMI</td>
+                            <td>(B8 &minus; B11)<br>&mdash;&mdash;&mdash;&mdash;<br>(B8 + B11)</td>
+                            <td>
+                                &gt; 0.3 &nbsp;Good moisture<br>
+                                0.1&ndash;0.3 &nbsp;Fair<br>
+                                &lt; 0.1 &nbsp;Low &mdash; vegetation stress
+                            </td>
+                            <td>Vegetation moisture content &amp; stress levels &mdash; early stress detection</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="guide-scoring-header">HEALTH ASSESSMENT SCORING</div>
+                <div class="guide-scoring-row">
+                    <div class="guide-scoring-desc">
+                        Each metric scores 0, 1, or 2 based on its threshold band.<br>
+                        Final score = average of all three metric scores.
+                    </div>
+                    <div class="guide-bands">
+                        <div class="guide-band-item gb-healthy">
+                            &ge; 1.7<br><span class="gb-sub">HEALTHY</span>
+                        </div>
+                        <div class="guide-band-item gb-fair">
+                            1.0 &ndash; 1.7<br><span class="gb-sub">FAIR</span>
+                        </div>
+                        <div class="guide-band-item gb-degraded">
+                            &lt; 1.0<br><span class="gb-sub">DEGRADED</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
-    // ── Simulated wetland monitoring data ──
-    const wetlands = [
-        {
-            id: 1, name: "Lets'eng-la-Letsie",
-            district: "Mohale's Hoek",
-            lat: -30.3085, lng: 28.1646,
-            status: "healthy",
-            ndvi: 0.72, waterLevel: "Normal", area_ha: 124.5,
-            threat: null,
-            note: "Stable vegetation cover, water levels consistent with seasonal norms."
-        },
-        {
-            id: 2, name: "Khubelu Wetland",
-            district: "Mokhotlong",
-            lat: -29.2800, lng: 29.0600,
-            status: "critical",
-            ndvi: 0.38, waterLevel: "Declining", area_ha: 67.2,
-            threat: "erosion",
-            note: "Severe gully erosion on eastern bank from surface runoff. Sediment buildup visible."
-        },
-        {
-            id: 3, name: "Semonkong Marshlands",
-            district: "Maseru",
-            lat: -29.8603, lng: 28.0648,
-            status: "healthy",
-            ndvi: 0.65, waterLevel: "Normal", area_ha: 89.1,
-            threat: null,
-            note: "Good condition. Native sedge and grass species well established."
-        },
-        {
-            id: 4, name: "Oxbow Wetland",
-            district: "Mokhotlong",
-            lat: -28.7636, lng: 28.6282,
-            status: "severe",
-            ndvi: 0.21, waterLevel: "Critical Low", area_ha: 45.8,
-            threat: "trampling",
-            note: "Heavy livestock trampling has destroyed bank vegetation. Cattle and sheep access unrestricted."
-        },
-        {
-            id: 5, name: "Bokong Nature Reserve",
-            district: "Thaba-Tseka",
-            lat: -29.1500, lng: 28.7900,
-            status: "critical",
-            ndvi: 0.42, waterLevel: "Below Normal", area_ha: 156.3,
-            threat: "temperature",
-            note: "Rising temperatures causing accelerated evaporation. Water surface reduced by ~30%."
-        },
-        {
-            id: 6, name: "Mantsonyane Wetland",
-            district: "Thaba-Tseka",
-            lat: -29.5354, lng: 28.2350,
-            status: "severe",
-            ndvi: 0.18, waterLevel: "Critical Low", area_ha: 34.7,
-            threat: "shape",
-            note: "Wetland boundary has contracted significantly. Original perimeter reduced by 40% since 2020."
-        },
-        {
-            id: 7, name: "Ts'akholo Wetland",
-            district: "Mafeteng",
-            lat: -29.6687, lng: 27.9622,
-            status: "healthy",
-            ndvi: 0.68, waterLevel: "Normal", area_ha: 72.4,
-            threat: null,
-            note: "Healthy condition. Community conservation programme active since 2018."
-        },
-        {
-            id: 8, name: "Qacha's Nek Wetland",
-            district: "Qacha's Nek",
-            lat: -30.0613, lng: 28.4723,
-            status: "critical",
-            ndvi: 0.35, waterLevel: "Declining", area_ha: 58.9,
-            threat: "species",
-            note: "Invasive species (Phragmites) displacing native wetland flora. Biodiversity index dropped 45%."
-        },
-        {
-            id: 9, name: "Leribe Lowland Marsh",
-            district: "Leribe",
-            lat: -28.8866, lng: 27.9853,
-            status: "severe",
-            ndvi: 0.15, waterLevel: "Dry", area_ha: 28.3,
-            threat: "erosion",
-            note: "Topsoil completely eroded in central zone. Deep rill erosion from unmanaged drainage."
-        },
-        {
-            id: 10, name: "SNP Alpine Wetland",
-            district: "Qacha's Nek",
-            lat: -29.8686, lng: 29.0970,
-            status: "healthy",
-            ndvi: 0.71, waterLevel: "Normal", area_ha: 203.6,
-            threat: null,
-            note: "Protected area. Alpine bog in excellent condition with high biodiversity."
-        }
-    ];
+    const wetlands = {{ wetlands_json|safe }};
 
-    // ── Status colors ──
-    const statusColors = {
-        healthy: '#2e7d32',
-        critical: '#e65100',
-        severe: '#c62828'
-    };
-    const statusLabels = {
-        healthy: 'Healthy',
-        critical: 'Critical',
-        severe: 'Severe'
-    };
-
+    const healthColors = { HEALTHY: '#2e7d32', FAIR: '#e65100', DEGRADED: '#c62828' };
     const threatLabels = {
-        erosion: { label: 'Soil Erosion', icon: '🏜️', cls: 'threat-erosion' },
-        species: { label: 'Invasive Species', icon: '🌿', cls: 'threat-species' },
-        temperature: { label: 'High Temperature', icon: '🌡️', cls: 'threat-temperature' },
-        shape: { label: 'Changing Shape', icon: '📐', cls: 'threat-shape' },
-        trampling: { label: 'Animal Trampling', icon: '🐄', cls: 'threat-trampling' }
+        erosion:     { label: 'Soil Erosion',       icon: '🏜️', cls: 'threat-erosion' },
+        species:     { label: 'Invasive Species',    icon: '🌿', cls: 'threat-species' },
+        temperature: { label: 'High Temperature',    icon: '🌡️', cls: 'threat-temperature' },
+        shape:       { label: 'Changing Shape',      icon: '📐', cls: 'threat-shape' },
+        trampling:   { label: 'Animal Trampling',    icon: '🐄', cls: 'threat-trampling' }
     };
 
-    // ── Initialize map ──
-    const map = L.map('monitorMap', {
-        center: [-29.6, 28.3],
-        zoom: 8,
-        zoomControl: true
+    // ── Health detail helpers ──
+    const bandMeta = {
+        ndvi:  { 2: ['Good',   'band-good'], 1: ['Moderate', 'band-moderate'], 0: ['Stressed', 'band-poor'] },
+        mndwi: { 2: ['Strong', 'band-good'], 1: ['Moderate', 'band-moderate'], 0: ['Dry',      'band-poor'] },
+        ndmi:  { 2: ['Good',   'band-good'], 1: ['Fair',     'band-moderate'], 0: ['Stressed', 'band-poor'] },
+    };
+
+    let activeWetlandId = null;
+
+    function scoreNdvi(v)  { if (v == null) return null; return v > 0.4 ? 2 : v >= 0.2 ? 1 : 0; }
+    // Real MNDWI: (B3-B11)/(B3+B11) — positive = water/moisture, negative = bare/dry
+    function scoreMndwi(m) { if (m == null) return null; return m > 0.3 ? 2 : m >= 0.1 ? 1 : 0; }
+    // Real NDMI: (B8-B11)/(B8+B11) — vegetation moisture stress
+    function scoreNdmi(m)  { if (m == null) return null; return m > 0.3 ? 2 : m >= 0.1 ? 1 : 0; }
+
+    function barClass(score) { return score == null ? 'bar-na' : 'bar-' + score; }
+
+    function setBandEl(el, score, metric) {
+        if (score == null) { el.textContent = '—'; el.className = 'hd-metric-band band-na'; return; }
+        const [label, cls] = bandMeta[metric][score];
+        el.textContent = label; el.className = 'hd-metric-band ' + cls;
+    }
+
+    function clearMetrics() {
+        ['barMndwi', 'barNdvi', 'barNdmi'].forEach(id => {
+            document.getElementById(id).className = 'hd-metric-bar bar-na';
+        });
+        ['valMndwi', 'valNdvi', 'valNdmi'].forEach(id => {
+            document.getElementById(id).textContent = '—';
+        });
+        ['bandMndwi', 'bandNdvi', 'bandNdmi'].forEach(id => {
+            const el = document.getElementById(id);
+            el.textContent = '—'; el.className = 'hd-metric-band band-na';
+        });
+        document.getElementById('hdScoreNum').textContent = '—';
+        const badgeEl = document.getElementById('hdBadge');
+        badgeEl.textContent = '—'; badgeEl.className = 'hd-badge badge-unknown';
+    }
+
+    function renderMetrics(ndvi, mndwi, ndmi) {
+        const sNdvi  = scoreNdvi(ndvi);
+        const sMndwi = scoreMndwi(mndwi);
+        const sNdmi  = scoreNdmi(ndmi);
+
+        document.getElementById('barMndwi').className = 'hd-metric-bar ' + barClass(sMndwi);
+        document.getElementById('valMndwi').textContent = mndwi != null ? mndwi.toFixed(3) : '—';
+        setBandEl(document.getElementById('bandMndwi'), sMndwi, 'mndwi');
+
+        document.getElementById('barNdvi').className = 'hd-metric-bar ' + barClass(sNdvi);
+        document.getElementById('valNdvi').textContent = ndvi != null ? ndvi.toFixed(3) : '—';
+        setBandEl(document.getElementById('bandNdvi'), sNdvi, 'ndvi');
+
+        document.getElementById('barNdmi').className = 'hd-metric-bar ' + barClass(sNdmi);
+        document.getElementById('valNdmi').textContent = ndmi != null ? ndmi.toFixed(3) : '—';
+        setBandEl(document.getElementById('bandNdmi'), sNdmi, 'ndmi');
+
+        const scores = [sNdvi, sMndwi, sNdmi].filter(s => s != null);
+        const scoreEl = document.getElementById('hdScoreNum');
+        const badgeEl = document.getElementById('hdBadge');
+        if (scores.length) {
+            const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+            const label = avg >= 1.7 ? 'HEALTHY' : avg >= 1.0 ? 'FAIR' : 'DEGRADED';
+            scoreEl.textContent = avg.toFixed(2) + ' / 2.00';
+            badgeEl.textContent = label;
+            badgeEl.className = 'hd-badge badge-' + label;
+        } else {
+            scoreEl.textContent = 'No data';
+            badgeEl.textContent = '—';
+            badgeEl.className = 'hd-badge badge-unknown';
+        }
+    }
+
+    function fetchYearData(wetlandId, year) {
+        document.getElementById('hdLoading').style.display = 'block';
+        fetch(`/api/wetlands/${wetlandId}/erosion/?year=${year}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('hdLoading').style.display = 'none';
+                document.getElementById('hdYear').textContent = 'Year ' + year;
+                const ndvi  = data.ndvi_mean  != null ? Number(data.ndvi_mean)  : null;
+                const mndwi = data.mndwi_mean != null ? Number(data.mndwi_mean) : null;
+                const ndmi  = data.ndmi_mean  != null ? Number(data.ndmi_mean)  : null;
+                renderMetrics(ndvi, mndwi, ndmi);
+                // Sync popup, list badge, and marker colour with real EE assessment
+                const sc = [scoreNdvi(ndvi), scoreMndwi(mndwi), scoreNdmi(ndmi)].filter(s => s != null);
+                if (sc.length) {
+                    const avg = sc.reduce((a, b) => a + b, 0) / sc.length;
+                    const label = avg >= 1.7 ? 'HEALTHY' : avg >= 1.0 ? 'FAIR' : 'DEGRADED';
+                    const bg    = label === 'HEALTHY' ? '#c8e6c9' : label === 'FAIR' ? '#ffe0b2' : '#ffcdd2';
+                    const color = label === 'HEALTHY' ? '#1b5e20' : label === 'FAIR' ? '#bf360c' : '#b71c1c';
+                    const popupDiv = document.getElementById('popupHealth_' + wetlandId);
+                    if (popupDiv) {
+                        popupDiv.innerHTML = `<span class="popup-health-badge badge-${label}">${label} &mdash; score ${avg.toFixed(2)}</span>`;
+                    }
+                    const listSpan = document.getElementById('listHealth_' + wetlandId);
+                    if (listSpan) {
+                        listSpan.innerHTML = `<span class="threat-tag" style="background:${bg};color:${color};font-weight:700">${label}</span>`;
+                    }
+                    if (markers[wetlandId]) {
+                        markers[wetlandId].setStyle({ fillColor: healthColors[label] });
+                    }
+                }
+            })
+            .catch(() => { document.getElementById('hdLoading').style.display = 'none'; });
+    }
+
+    function showHealthDetail(w) {
+        activeWetlandId = w.id;
+        document.getElementById('healthDetail').style.display = 'block';
+        document.getElementById('hdName').textContent = w.name;
+
+        const slider = document.getElementById('healthYearSlider');
+        const startYear = w.record_year || 2024;
+        slider.value = startYear;
+        document.getElementById('sliderYearLabel').textContent = startYear;
+        document.getElementById('hdYear').textContent = 'Year ' + startYear;
+
+        // Clear stale values then fetch real EE data
+        clearMetrics();
+        fetchYearData(w.id, startYear);
+    }
+
+    // Slider wiring
+    const slider = document.getElementById('healthYearSlider');
+    slider.addEventListener('input', function() {
+        document.getElementById('sliderYearLabel').textContent = this.value;
+    });
+    slider.addEventListener('change', function() {
+        if (activeWetlandId) fetchYearData(activeWetlandId, this.value);
     });
 
+    // ── Map ──
+    const map = L.map('monitorMap', { center: [-29.6, 28.3], zoom: 8 });
     L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-        attribution: '&copy; Google',
-        maxZoom: 20
+        attribution: '&copy; Google', maxZoom: 20
     }).addTo(map);
 
-    // ── Custom circle markers ──
+    // ── Markers ──
     const markers = {};
     wetlands.forEach(w => {
         const marker = L.circleMarker([w.lat, w.lng], {
             radius: 12,
-            fillColor: statusColors[w.status],
-            color: '#fff',
-            weight: 2.5,
-            opacity: 1,
-            fillOpacity: 0.85
+            fillColor: '#90a4ae',
+            color: '#fff', weight: 2.5, opacity: 1, fillOpacity: 0.85
         }).addTo(map);
 
-        // Pulsing effect for severe
-        if (w.status === 'severe') {
-            marker.setStyle({ weight: 3, dashArray: '4 4' });
-        }
-
-        // Popup
         let threatHtml = '';
         if (w.threat) {
             const t = threatLabels[w.threat];
             threatHtml = `<tr><td>Threat</td><td><span class="threat-label ${t.cls}">${t.icon} ${t.label}</span></td></tr>`;
         }
-
-        const popupContent = `
+        marker.bindPopup(`
             <div class="wetland-popup">
                 <h4>${w.name}</h4>
-                <span class="popup-status status-${w.status}">${statusLabels[w.status]}</span>
                 <table>
                     <tr><td>District</td><td>${w.district}</td></tr>
-                    <tr><td>NDVI</td><td>${w.ndvi.toFixed(2)}</td></tr>
-                    <tr><td>Water Level</td><td>${w.waterLevel}</td></tr>
-                    <tr><td>Area</td><td>${w.area_ha} ha</td></tr>
+                    <tr><td>NDVI</td><td>${w.ndvi !== null && w.ndvi !== undefined ? w.ndvi.toFixed(2) : 'N/A'}</td></tr>
+                    <tr><td>Area</td><td>${w.area_ha ? w.area_ha + ' ha' : '—'}</td></tr>
                     ${threatHtml}
                 </table>
-                <p style="margin-top:8px;font-size:11px;color:#555;line-height:1.4;">${w.note}</p>
+                <div id="popupHealth_${w.id}" style="margin-top:8px"></div>
+                ${w.note ? `<p style="margin-top:8px;font-size:11px;color:#555;line-height:1.4;">${w.note}</p>` : ''}
             </div>
-        `;
-        marker.bindPopup(popupContent, { maxWidth: 280 });
+        `, { maxWidth: 290 });
+
         markers[w.id] = marker;
     });
 
@@ -291,19 +542,12 @@
         div.innerHTML = `
             <h4>Health Status</h4>
             <div><span class="legend-dot" style="background:#2e7d32"></span> Healthy</div>
-            <div><span class="legend-dot" style="background:#e65100"></span> Critical</div>
-            <div><span class="legend-dot" style="background:#c62828"></span> Severe</div>
-        `;
+            <div><span class="legend-dot" style="background:#e65100"></span> Fair</div>
+            <div><span class="legend-dot" style="background:#c62828"></span> Degraded</div>
+            <div><span class="legend-dot" style="background:#90a4ae"></span> Not assessed</div>`;
         return div;
     };
     legend.addTo(map);
-
-    // ── Summary counts ──
-    const counts = { healthy: 0, critical: 0, severe: 0 };
-    wetlands.forEach(w => counts[w.status]++);
-    document.getElementById('countHealthy').textContent = counts.healthy;
-    document.getElementById('countCritical').textContent = counts.critical;
-    document.getElementById('countSevere').textContent = counts.severe;
 
     // ── Side panel list ──
     const listEl = document.getElementById('siteList');
@@ -320,11 +564,11 @@
 
         li.innerHTML = `
             <div class="site-name">${w.name}</div>
-            <div class="site-district">${w.district} District</div>
+            <div class="site-district">${w.district}</div>
             <div class="site-meta">
-                <span class="status-pill status-${w.status}">${statusLabels[w.status]}</span>
+                <span id="listHealth_${w.id}"></span>
                 ${threatTag}
-                <span class="threat-tag">NDVI: ${w.ndvi.toFixed(2)}</span>
+                <span class="threat-tag">NDVI: ${w.ndvi !== null && w.ndvi !== undefined ? w.ndvi.toFixed(2) : 'N/A'}</span>
             </div>
         `;
 
@@ -333,12 +577,20 @@
             li.classList.add('selected');
             map.setView([w.lat, w.lng], 11);
             markers[w.id].openPopup();
+            showHealthDetail(w);
         });
 
         listEl.appendChild(li);
     });
 
-    // Fix map sizing after layout renders
+    // ── Guide toggle ──
+    document.getElementById('guideToggle').addEventListener('click', function() {
+        const content = document.getElementById('guideContent');
+        const arrow = document.getElementById('guideArrow');
+        content.classList.toggle('open');
+        arrow.textContent = content.classList.contains('open') ? '▲' : '▼';
+    });
+
     setTimeout(() => map.invalidateSize(), 200);
 })();
 </script>

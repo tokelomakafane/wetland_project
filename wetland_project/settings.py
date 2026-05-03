@@ -1,21 +1,32 @@
 import os
 from pathlib import Path
 from django.core.management.utils import get_random_secret_key
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', get_random_secret_key())
 
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'thuto.co.ls', 'www.thuto.co.ls']
 
 CSRF_TRUSTED_ORIGINS = [
     'https://localhost:8000',
     'https://127.0.0.1:8000',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'https://thuto.co.ls',
+    'https://www.thuto.co.ls',
 ]
+
+# Cloudflare terminates SSL; Django sees HTTP from nginx. These settings
+# tell Django that X-Forwarded-Proto: https means the original request was HTTPS.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -30,6 +41,7 @@ INSTALLED_APPS = [
     'early_warning',
     'wetlands',
     'timelapse',
+    'users',
 ]
 
 MIDDLEWARE = [
@@ -40,6 +52,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'mapping.middleware.LoginRequiredMiddleware',
 ]
 
 ROOT_URLCONF = 'wetland_project.urls'
@@ -56,6 +69,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'mapping.context_processors.early_warning_alert_count',
+                'mapping.context_processors.user_role_context',
             ],
         },
     },
@@ -93,3 +107,5 @@ EE_ASSET_ID = 'projects/tokelo-329815/assets/Lesotho_Wetland_Classification_2013
 # Path to your GEE service account key JSON (for production)
 # For development, ee.Authenticate() is used instead
 EE_SERVICE_ACCOUNT_KEY = os.environ.get('EE_SERVICE_ACCOUNT_KEY', '')
+# Optional: override service account email (auto-read from key file if not set)
+EE_SERVICE_ACCOUNT = os.environ.get('EE_SERVICE_ACCOUNT', '')

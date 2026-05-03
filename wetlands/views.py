@@ -464,18 +464,26 @@ def api_wetland_erosion_data(request, pk):
         slope = ee.Terrain.slope(dem).clip(geom)
         bsi = col.map(_calculate_bsi).select('BSI').mean().clip(geom)
         ndvi = col.map(_calculate_ndvi).select('NDVI').mean().clip(geom)
+        mndwi = col.map(lambda img: img.addBands(
+            img.normalizedDifference(['B3', 'B11']).rename('MNDWI')
+        )).select('MNDWI').mean().clip(geom)
+        ndmi = col.map(lambda img: img.addBands(
+            img.normalizedDifference(['B8', 'B11']).rename('NDMI')
+        )).select('NDMI').mean().clip(geom)
 
         risk = ee.Image(0) \
             .where(bsi.gt(0.1).And(slope.gt(8)), 1) \
             .where(bsi.gt(0.2).And(slope.gt(15)), 2) \
             .clip(geom)
 
-        stats = risk.addBands(bsi).addBands(ndvi).addBands(slope).reduceRegion(
-            reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), '', True),
-            geometry=geom,
-            scale=30,
-            maxPixels=1e6,
-        )
+        stats = (risk.addBands(bsi).addBands(ndvi)
+                 .addBands(slope).addBands(mndwi).addBands(ndmi)
+                 .reduceRegion(
+                     reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), '', True),
+                     geometry=geom,
+                     scale=30,
+                     maxPixels=1e6,
+                 ))
         data = stats.getInfo()
 
         mean_risk = data.get('constant_mean')
@@ -504,6 +512,10 @@ def api_wetland_erosion_data(request, pk):
             'bsi_std': round(data.get('BSI_stdDev', 0), 3),
             'ndvi_mean': round(data.get('NDVI_mean', 0), 3),
             'ndvi_std': round(data.get('NDVI_stdDev', 0), 3),
+            'mndwi_mean': round(data.get('MNDWI_mean', 0), 3),
+            'mndwi_std': round(data.get('MNDWI_stdDev', 0), 3),
+            'ndmi_mean': round(data.get('NDMI_mean', 0), 3),
+            'ndmi_std': round(data.get('NDMI_stdDev', 0), 3),
             'slope_mean': round(data.get('slope_mean', 0), 2),
             'erosion_risk': round(mean_risk or 0, 3),
             'risk_class': risk_class,
