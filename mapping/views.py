@@ -96,7 +96,71 @@ def dashboard(request):
 
 
 def monitor_view(request):
-    return render(request, 'mapping/monitor.html', {'active_page': 'monitor'})
+    import json as _json
+    from .models import Wetland
+
+    risk_to_status = {'low': 'healthy', 'moderate': 'critical', 'high': 'severe', 'unknown': 'healthy'}
+    obs_to_threat = {'erosion': 'erosion', 'invasive_species': 'species', 'grazing': 'trampling'}
+
+    def _centroid(geometry_str):
+        try:
+            geom = _json.loads(geometry_str)
+            if geom.get('type') == 'Feature':
+                geom = geom['geometry']
+            coords = geom.get('coordinates', [])
+            if geom.get('type') == 'Polygon' and coords:
+                ring = coords[0]
+                return (
+                    round(sum(c[1] for c in ring) / len(ring), 6),
+                    round(sum(c[0] for c in ring) / len(ring), 6),
+                )
+        except Exception:
+            pass
+        return None, None
+
+    wetlands_data = []
+    qs = Wetland.objects.filter(is_current=True).prefetch_related('monitoring_records', 'community_inputs')
+    for w in qs:
+        lat, lng = _centroid(w.geometry)
+        if lat is None:
+            continue
+
+        record = w.monitoring_records.order_by('-year').first()
+
+        if record and record.risk_class:
+            status = risk_to_status.get(record.risk_class, risk_to_status.get(w.risk_level, 'healthy'))
+        else:
+            status = risk_to_status.get(w.risk_level, 'healthy')
+
+        ndvi_val = round(record.ndvi_mean, 2) if record and record.ndvi_mean is not None else None
+        record_year = record.year if record else None
+
+        latest_input = w.community_inputs.filter(severity__in=['critical', 'warning']).order_by('-created_at').first()
+        threat = obs_to_threat.get(latest_input.observation) if latest_input else None
+
+        note = w.description or (record.notes if record else '') or ''
+
+        wetlands_data.append({
+            'id': w.id,
+            'name': w.name,
+            'district': w.village or 'Lesotho',
+            'lat': lat,
+            'lng': lng,
+            'status': status,
+            'ndvi': ndvi_val,
+            'area_ha': w.area_ha,
+            'threat': threat,
+            'note': note,
+            'record_year': record_year,
+            'health_score': None,
+            'health_label': None,
+        })
+
+    return render(request, 'mapping/monitor.html', {
+        'active_page': 'monitor',
+        'wetlands_json': _json.dumps(wetlands_data),
+        'wetland_count': len(wetlands_data),
+    })
 
 
 def alerts_view(request):
