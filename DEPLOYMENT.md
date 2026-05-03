@@ -48,7 +48,7 @@ sudo ufw enable
 
 ```bash
 cd /home/wetland
-git clone <repo-url> app
+git clone https://github.com/tokelomakafane/wetland_project.git app
 cd app
 ```
 
